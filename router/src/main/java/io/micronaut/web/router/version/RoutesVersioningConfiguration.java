@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.web.router.version;
 
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.core.util.StringUtils;
 import io.micronaut.core.util.Toggleable;
+
+import javax.annotation.Nullable;
+
+import java.util.Optional;
 
 import static io.micronaut.web.router.version.RoutesVersioningConfiguration.PREFIX;
 
@@ -37,16 +40,9 @@ public class RoutesVersioningConfiguration implements Toggleable {
      * The configuration property.
      */
     public static final String PREFIX = "micronaut.router.versioning";
-
-    /**
-     * The default enable value.
-     */
     private static final boolean DEFAULT_ENABLED = false;
-
-    /**
-     * The enable value.
-     */
     private boolean enabled = DEFAULT_ENABLED;
+    private String defaultVersion;
 
     /**
      * @param enabled Enables the version based route matches filtering.
@@ -61,6 +57,23 @@ public class RoutesVersioningConfiguration implements Toggleable {
     @Override
     public boolean isEnabled() {
         return enabled;
+    }
+
+
+    /**
+     * @return The version to use if none can be resolved
+     */
+    public Optional<String> getDefaultVersion() {
+        return Optional.ofNullable(defaultVersion);
+    }
+
+    /**
+     * Sets the version to use if the version cannot be resolved. Default value (null).
+     *
+     * @param defaultVersion The default version
+     */
+    public void setDefaultVersion(@Nullable String defaultVersion) {
+        this.defaultVersion = defaultVersion;
     }
 
 }

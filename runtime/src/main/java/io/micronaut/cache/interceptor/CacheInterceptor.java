@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.cache.interceptor;
 
 import io.micronaut.aop.InterceptPhase;
@@ -384,10 +383,6 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
                             CacheKeyGenerator keyGenerator = cacheOperation.getCacheInvalidateKeyGenerator(invalidateOperation);
                             String[] parameterNames = invalidateOperation.get(MEMBER_PARAMETERS, String[].class, StringUtils.EMPTY_STRING_ARRAY);
                             Object[] parameterValues = resolveParams(context, parameterNames);
-                            Class<? extends CacheKeyGenerator> alternateKeyGen = invalidateOperation.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null);
-                            if (alternateKeyGen != null && keyGenerator.getClass() != alternateKeyGen) {
-                                keyGenerator = resolveKeyGenerator(alternateKeyGen);
-                            }
                             Object key = keyGenerator.generateKey(context, parameterValues);
                             for (String cacheName : cacheNames) {
                                 AsyncCache<?> asyncCache = cacheManager.getCache(cacheName).async();
@@ -399,7 +394,8 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
                             }
                         }
                     } else {
-                        final Flowable<Boolean> cacheInvalidateFlowable = Flowable.create(emitter -> {
+
+                        final Flowable<Object> cacheInvalidateFlowable = Flowable.create(emitter -> {
                             if (invalidateAll) {
                                 final CompletableFuture<Void> allFutures = buildInvalidateAllFutures(cacheNames);
                                 allFutures.whenCompleteAsync((aBoolean, throwable) -> {
@@ -409,18 +405,17 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
                                             emitter.onError(throwable);
                                             return;
                                         }
+                                        emitter.onNext(true);
+                                        emitter.onComplete();
+                                    } else {
+                                        emitter.onNext(o);
+                                        emitter.onComplete();
                                     }
-                                    emitter.onNext(true);
-                                    emitter.onComplete();
                                 }, ioExecutor);
                             } else {
                                 CacheKeyGenerator keyGenerator = cacheOperation.getCacheInvalidateKeyGenerator(invalidateOperation);
                                 String[] parameterNames = invalidateOperation.get(MEMBER_PARAMETERS, String[].class, StringUtils.EMPTY_STRING_ARRAY);
                                 Object[] parameterValues = resolveParams(context, parameterNames);
-                                Class<? extends CacheKeyGenerator> alternateKeyGen = invalidateOperation.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null);
-                                if (alternateKeyGen != null && keyGenerator.getClass() != alternateKeyGen) {
-                                    keyGenerator = resolveKeyGenerator(alternateKeyGen);
-                                }
                                 Object key = keyGenerator.generateKey(context, parameterValues);
                                 final CompletableFuture<Void> allFutures = buildInvalidateFutures(cacheNames, key);
                                 allFutures.whenCompleteAsync((aBoolean, throwable) -> {
@@ -431,7 +426,7 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
                                             return;
                                         }
                                     }
-                                    emitter.onNext(true);
+                                    emitter.onNext(o);
                                     emitter.onComplete();
                                 }, ioExecutor);
                             }
@@ -441,7 +436,7 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
                 }
             }
             if (!cacheInvalidates.isEmpty()) {
-                return Flowable.concat(cacheInvalidates).toList().map(flowables -> Flowable.just(o)).toFlowable();
+                return Flowable.merge(cacheInvalidates).lastOrError().toFlowable();
             } else {
                 return Flowable.just(o);
             }
@@ -470,14 +465,14 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
                             CompletableFuture<Void> putOperationFuture = buildPutFutures(cacheNames, o, key);
                             putOperationFuture.whenComplete((aVoid, throwable) -> {
                                 if (throwable == null) {
-                                    emitter.onNext(true);
+                                    emitter.onNext(o);
                                     emitter.onComplete();
                                 } else {
                                     SyncCache cache = cacheManager.getCache(cacheNames[0]);
                                     if (errorHandler.handlePutError(cache, key, o, asRuntimeException(throwable))) {
                                         emitter.onError(throwable);
                                     } else {
-                                        emitter.onNext(true);
+                                        emitter.onNext(o);
                                         emitter.onComplete();
                                     }
                                 }
@@ -489,7 +484,7 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
             }
 
             if (!cachePuts.isEmpty()) {
-                return Flowable.concat(cachePuts).toList().map(flowables -> Flowable.just(o)).toFlowable();
+                return Flowable.merge(cachePuts).lastOrError().toFlowable();
             } else {
                 return Flowable.just(o);
             }
@@ -669,11 +664,20 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
 
     private CacheKeyGenerator resolveKeyGenerator(CacheKeyGenerator defaultKeyGenerator, AnnotationValue<Cacheable> cacheConfig) {
         CacheKeyGenerator keyGenerator = defaultKeyGenerator;
-        Class<? extends CacheKeyGenerator> alternateKeyGen = cacheConfig.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null);
-        if (alternateKeyGen != null && keyGenerator.getClass() != alternateKeyGen) {
-            keyGenerator = resolveKeyGenerator(alternateKeyGen);
+        final CacheKeyGenerator altKeyGenInstance = cacheConfig.get(MEMBER_KEY_GENERATOR, CacheKeyGenerator.class).orElse(null);
+        if (altKeyGenInstance != null) {
+            return altKeyGenInstance;
+        } else {
+            Class<? extends CacheKeyGenerator> alternateKeyGen = cacheConfig.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null);
+            if (alternateKeyGen != null && keyGenerator.getClass() != alternateKeyGen) {
+                keyGenerator = resolveKeyGenerator(alternateKeyGen);
+            }
+            if (keyGenerator == null) {
+                return new DefaultCacheKeyGenerator();
+            }
+            return keyGenerator;
         }
-        return keyGenerator;
+
     }
 
     private String[] resolveCacheNames(AnnotationValue<CacheConfig> defaultConfig, AnnotationValue<Cacheable> cacheConfig) {
@@ -763,10 +767,6 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
         Object[] parameterValues = resolveParams(context, parameterNames);
 
         if (!invalidateAll) {
-            Class<? extends CacheKeyGenerator> alternateKeyGen = cacheConfig.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null);
-            if (alternateKeyGen != null && keyGenerator.getClass() != alternateKeyGen) {
-                keyGenerator = resolveKeyGenerator(alternateKeyGen);
-            }
             key = keyGenerator.generateKey(context, parameterValues);
         }
 
@@ -886,11 +886,15 @@ public class CacheInterceptor implements MethodInterceptor<Object, Object> {
         }
 
         CacheKeyGenerator getCacheInvalidateKeyGenerator(AnnotationValue<CacheInvalidate> cacheConfig) {
-            return getKeyGenerator(cacheConfig.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null));
+            return cacheConfig.get(MEMBER_KEY_GENERATOR, CacheKeyGenerator.class).orElseGet(() ->
+                getKeyGenerator(cacheConfig.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null))
+            );
         }
 
         CacheKeyGenerator getCachePutKeyGenerator(AnnotationValue<CachePut> cacheConfig) {
-            return getKeyGenerator(cacheConfig.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null));
+            return cacheConfig.get(MEMBER_KEY_GENERATOR, CacheKeyGenerator.class).orElseGet(() ->
+                getKeyGenerator(cacheConfig.get(MEMBER_KEY_GENERATOR, Class.class).orElse(null))
+            );
         }
 
         private String[] getCacheNames(String[] cacheNames) {

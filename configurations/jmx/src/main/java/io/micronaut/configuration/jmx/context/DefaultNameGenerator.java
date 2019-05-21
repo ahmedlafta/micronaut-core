@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.configuration.jmx.context;
 
 import io.micronaut.inject.BeanDefinition;
+import io.micronaut.inject.ProxyBeanDefinition;
 
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
@@ -34,7 +34,13 @@ public class DefaultNameGenerator implements NameGenerator {
 
     @Override
     public ObjectName generate(BeanDefinition<?> beanDefinition) throws MalformedObjectNameException {
-        Class type = beanDefinition.getBeanType();
+        final Class type;
+        if (beanDefinition instanceof ProxyBeanDefinition) {
+            type = ((ProxyBeanDefinition<?>) beanDefinition).getTargetType();
+        } else {
+            type = beanDefinition.getBeanType();
+        }
+
         Hashtable<String, String> properties = new Hashtable<>(1);
         properties.put("type", type.getSimpleName());
 

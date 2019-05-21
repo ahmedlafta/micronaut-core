@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import io.micronaut.http.HttpStatus
 import io.micronaut.http.MediaType
 import io.micronaut.http.annotation.Controller
 import io.micronaut.http.annotation.Get
+import io.micronaut.http.annotation.Header
 import io.micronaut.http.annotation.QueryValue
 import io.micronaut.http.client.annotation.Client
 import io.micronaut.http.client.exceptions.HttpClientResponseException
@@ -36,7 +37,6 @@ import spock.lang.Specification
 import spock.util.concurrent.PollingConditions
 
 import java.time.LocalDate
-import java.time.LocalDateTime
 
 /**
  * @author Graeme Rocher
@@ -398,6 +398,49 @@ class HttpGetSpec extends Specification {
         client.formatDateTimeQuery(dt) == dt.toString()
     }
 
+    void "test controller slash concatenation"() {
+        given:
+        BlockingHttpClient client = HttpClient.create(embeddedServer.getURL()).toBlocking()
+
+        expect:
+        client.retrieve("/noslash/slash") == "slash"
+        client.retrieve("/noslash/slash/") == "slash"
+        client.retrieve("/noslash/noslash") == "noslash"
+        client.retrieve("/noslash/noslash/") == "noslash"
+        client.retrieve("/slash/slash") == "slash"
+        client.retrieve("/slash/slash/") == "slash"
+        client.retrieve("/slash/noslash") == "noslash"
+        client.retrieve("/slash/noslash/") == "noslash"
+
+        client.retrieve("/ending-slash/slash") == "slash"
+        client.retrieve("/ending-slash/slash/") == "slash"
+        client.retrieve("/ending-slash/noslash") == "noslash"
+        client.retrieve("/ending-slash/noslash/") == "noslash"
+
+        client.retrieve("/noslash") == "noslash"
+        client.retrieve("/noslash/") == "noslash"
+        client.retrieve("/slash") == "slash"
+        client.retrieve("/slash/") == "slash"
+    }
+
+    void "test a request with a custom host header"() {
+        given:
+        HttpClient client = HttpClient.create(embeddedServer.getURL())
+
+        when:
+        String body = client.toBlocking().retrieve(
+                HttpRequest.GET("/get/host").header("Host", "http://foo.com"), String
+        )
+
+
+        then:
+        body == "http://foo.com"
+
+        cleanup:
+        client.stop()
+        client.close()
+    }
+
     @Controller("/get")
     static class GetController {
 
@@ -464,6 +507,69 @@ class HttpGetSpec extends Specification {
         @Get("/dateTimeQuery")
         String formatDateTimeQuery(@QueryValue @Format('yyyy-MM-dd') LocalDate myDate) {
             return myDate.toString()
+        }
+
+        @Get("/host")
+        String hostHeader(@Header String host) {
+            return host
+        }
+    }
+
+
+    @Controller("noslash")
+    static class NoSlashController {
+
+        @Get("/slash")
+        String slash() {
+            "slash"
+        }
+
+        @Get("noslash")
+        String noSlash() {
+            "noslash"
+        }
+    }
+
+
+    @Controller("/slash")
+    static class SlashController {
+
+        @Get("/slash")
+        String slash() {
+            "slash"
+        }
+
+        @Get("noslash")
+        String noSlash() {
+            "noslash"
+        }
+    }
+
+    @Controller("/ending-slash/")
+    static class EndingSlashController {
+
+        @Get("/slash/")
+        String slash() {
+            "slash"
+        }
+
+        @Get("noslash/")
+        String noSlash() {
+            "noslash"
+        }
+    }
+
+    @Controller
+    static class SlashRootController {
+
+        @Get("/slash")
+        String slash() {
+            "slash"
+        }
+
+        @Get("noslash")
+        String noSlash() {
+            "noslash"
         }
     }
 

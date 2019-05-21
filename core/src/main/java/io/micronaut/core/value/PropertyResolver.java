@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.core.value;
 
 import io.micronaut.core.convert.ArgumentConversionContext;
@@ -23,11 +22,9 @@ import io.micronaut.core.type.Argument;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * A property resolver is capable of resolving properties from an underlying property source.
@@ -48,7 +45,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param name The name of the property
      * @return True if it is
      */
-    boolean containsProperty(String name);
+    boolean containsProperty(@Nonnull String name);
 
     /**
      * Whether the given property or any nested properties exist for the key given key within this resolver.
@@ -56,7 +53,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param name The name of the property
      * @return True if it is
      */
-    boolean containsProperties(String name);
+    boolean containsProperties(@Nonnull String name);
 
     /**
      * <p>Resolve the given property for the given name, type and generic type arguments.</p>
@@ -68,7 +65,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param <T>               The concrete type
      * @return An optional containing the property value if it exists
      */
-    <T> Optional<T> getProperty(String name, ArgumentConversionContext<T> conversionContext);
+    @Nonnull <T> Optional<T> getProperty(@Nonnull String name, @Nonnull ArgumentConversionContext<T> conversionContext);
 
     /**
      * <p>Resolve the given property for the given name, type and generic type arguments.</p>
@@ -80,7 +77,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param <T>      The concrete type
      * @return An optional containing the property value if it exists
      */
-    default <T> Optional<T> getProperty(String name, Argument<T> argument) {
+    default @Nonnull <T> Optional<T> getProperty(@Nonnull String name, @Nonnull Argument<T> argument) {
         return getProperty(name, ConversionContext.of(argument));
     }
 
@@ -90,7 +87,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param name The name
      * @return The properties
      */
-    default @Nonnull Map<String, Object> getProperties(String name) {
+    default @Nonnull Map<String, Object> getProperties(@Nonnull String name) {
         return getProperties(name, StringConvention.RAW);
     }
 
@@ -116,12 +113,12 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param <T>          The concrete type
      * @return An optional containing the property value if it exists
      */
-    default <T> Optional<T> getProperty(String name, Class<T> requiredType, ConversionContext context) {
+    default @Nonnull <T> Optional<T> getProperty(@Nonnull String name, @Nonnull Class<T> requiredType, @Nonnull ConversionContext context) {
         return getProperty(name, context.with(Argument.of(requiredType)));
     }
 
     @Override
-    default <T> Optional<T> get(String name, ArgumentConversionContext<T> conversionContext) {
+    default @Nonnull <T> Optional<T> get(@Nonnull String name, @Nonnull ArgumentConversionContext<T> conversionContext) {
         return getProperty(name, conversionContext);
     }
 
@@ -133,7 +130,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param <T>          The concrete type
      * @return An optional containing the property value if it exists
      */
-    default <T> Optional<T> getProperty(String name, Class<T> requiredType) {
+    default @Nonnull <T> Optional<T> getProperty(@Nonnull String name, @Nonnull Class<T> requiredType) {
         return getProperty(name, requiredType, ConversionContext.DEFAULT);
     }
 
@@ -146,7 +143,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @param <T>          The concrete type
      * @return An optional containing the property value if it exists
      */
-    default <T> T getProperty(String name, Class<T> requiredType, T defaultValue) {
+    default @Nullable <T> T getProperty(@Nonnull String name, @Nonnull Class<T> requiredType, @Nullable T defaultValue) {
         return getProperty(name, requiredType).orElse(defaultValue);
     }
 
@@ -159,7 +156,7 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @return The value of the property
      * @throws PropertyNotFoundException exception when property does not exist
      */
-    default <T> T getRequiredProperty(String name, Class<T> requiredType) throws PropertyNotFoundException {
+    default @Nonnull <T> T getRequiredProperty(@Nonnull String name, @Nonnull Class<T> requiredType) throws PropertyNotFoundException {
         return getProperty(name, requiredType).orElseThrow(() ->
             new PropertyNotFoundException(name, requiredType)
         );
@@ -172,6 +169,6 @@ public interface PropertyResolver extends ValueResolver<String> {
      * @return The property name
      */
     static String nameOf(String... path) {
-        return Arrays.stream(path).collect(Collectors.joining("."));
+        return String.join(".", path);
     }
 }

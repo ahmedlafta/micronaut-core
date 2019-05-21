@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,15 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.ast.groovy.visitor;
 
 import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.annotation.Internal;
 import io.micronaut.inject.ast.ClassElement;
 import io.micronaut.inject.ast.PropertyElement;
+import org.codehaus.groovy.ast.AnnotatedNode;
+import org.codehaus.groovy.control.SourceUnit;
 
-import javax.annotation.Nullable;
+import javax.annotation.Nonnull;
 
 /**
  * Implementation of {@link PropertyElement} for Groovy.
@@ -40,15 +41,25 @@ class GroovyPropertyElement extends AbstractGroovyElement implements PropertyEle
     /**
      * Default constructor.
      *
+     * @param sourceUnit The source unit
      * @param declaringElement The declaring element
+     * @param annotatedNode    The annotated node
      * @param annotationMetadata the annotation metadata
      * @param type the type
      * @param name the name
      * @param readOnly Whether it is read only
      * @param nativeType the native underlying type
      */
-    GroovyPropertyElement(GroovyClassElement declaringElement, AnnotationMetadata annotationMetadata, ClassElement type, String name, boolean readOnly, Object nativeType) {
-        super(annotationMetadata);
+    GroovyPropertyElement(
+            SourceUnit sourceUnit,
+            GroovyClassElement declaringElement,
+            AnnotatedNode annotatedNode,
+            AnnotationMetadata annotationMetadata,
+            ClassElement type,
+            String name,
+            boolean readOnly,
+            Object nativeType) {
+        super(sourceUnit, annotatedNode, annotationMetadata);
         this.type = type;
         this.name = name;
         this.readOnly = readOnly;
@@ -56,7 +67,7 @@ class GroovyPropertyElement extends AbstractGroovyElement implements PropertyEle
         this.declaringElement = declaringElement;
     }
 
-    @Nullable
+    @Nonnull
     @Override
     public ClassElement getType() {
         return type;

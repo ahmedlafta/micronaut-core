@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.jackson.parser;
 
 import com.fasterxml.jackson.core.*;
@@ -48,6 +47,7 @@ public class JacksonProcessor extends SingleThreadedBufferingProcessor<byte[], J
     private final JsonFactory jsonFactory;
     private String currentFieldName;
     private boolean streamArray;
+    private boolean rootIsArray;
 
     /**
      * Creates a new JacksonProcessor.
@@ -168,7 +168,11 @@ public class JacksonProcessor extends SingleThreadedBufferingProcessor<byte[], J
                 break;
 
             case START_ARRAY:
-                nodeStack.push(array(nodeStack.peekFirst()));
+                JsonNode node = nodeStack.peekFirst();
+                if (node == null) {
+                    rootIsArray = true;
+                }
+                nodeStack.push(array(node));
                 break;
 
             case END_OBJECT:
@@ -180,7 +184,7 @@ public class JacksonProcessor extends SingleThreadedBufferingProcessor<byte[], J
                 if (nodeStack.isEmpty()) {
                     return current;
                 } else {
-                    if (streamArray && event == JsonToken.END_OBJECT && nodeStack.size() == 1) {
+                    if (streamArray && nodeStack.size() == 1) {
                         JsonNode jsonNode = nodeStack.peekFirst();
                         if (jsonNode instanceof ArrayNode) {
                             return current;
@@ -306,6 +310,14 @@ public class JacksonProcessor extends SingleThreadedBufferingProcessor<byte[], J
 
             default:
                 throw new IllegalStateException("Unsupported JSON event: " + event);
+        }
+
+        //its an array and the stack size is 1 which means the value is scalar
+        if (rootIsArray && streamArray && nodeStack.size() == 1) {
+            ArrayNode arrayNode = (ArrayNode) nodeStack.peekFirst();
+            if (arrayNode.size() > 0) {
+                return arrayNode.remove(arrayNode.size() - 1);
+            }
         }
 
         return null;

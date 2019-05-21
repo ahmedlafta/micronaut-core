@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.cache.annotation;
 
 import io.micronaut.cache.interceptor.CacheInterceptor;
@@ -21,6 +20,7 @@ import io.micronaut.cache.interceptor.CacheKeyGenerator;
 import io.micronaut.cache.interceptor.DefaultCacheKeyGenerator;
 import io.micronaut.context.annotation.AliasFor;
 import io.micronaut.context.annotation.Type;
+import io.micronaut.core.annotation.InstantiatedMember;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -75,6 +75,7 @@ public @interface Cacheable {
      * @return The cache key generator class
      */
     @AliasFor(annotation = CacheConfig.class, member = "keyGenerator")
+    @InstantiatedMember
     Class<? extends CacheKeyGenerator> keyGenerator() default DefaultCacheKeyGenerator.class;
 
     /**

@@ -1,3 +1,18 @@
+/*
+ * Copyright 2017-2019 original authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.micronaut.http.client.services
 
 import io.micronaut.context.ApplicationContext
@@ -5,6 +20,7 @@ import io.micronaut.http.HttpRequest
 import io.micronaut.http.annotation.Controller
 import io.micronaut.http.annotation.Get
 import io.micronaut.http.annotation.Post
+import io.micronaut.http.annotation.Put
 import io.micronaut.http.client.annotation.Client
 import io.micronaut.http.client.HttpClientConfiguration
 import io.micronaut.http.client.RxHttpClient
@@ -34,7 +50,7 @@ class ManualHttpServiceDefinitionSpec extends Specification {
                 'micronaut.http.services.bar.health-check':true,
                 'micronaut.http.services.bar.health-check-interval':'100ms',
                 'micronaut.http.services.bar.read-timeout':'10s',
-                'micronaut.http.services.bar.pool.enabled':false
+                'micronaut.http.services.bar.pool.enabled':true
         )
         TestClientFoo tcFoo = clientApp.getBean(TestClientFoo)
         TestClientBar tcBar = clientApp.getBean(TestClientBar)
@@ -60,7 +76,7 @@ class ManualHttpServiceDefinitionSpec extends Specification {
 
         then:
         config.readTimeout.get() == Duration.ofSeconds(10)
-        !config.getConnectionPoolConfiguration().isEnabled()
+        config.getConnectionPoolConfiguration().isEnabled()
 
         when:
         client = clientApp.getBean(RxHttpClient, Qualifiers.byName("bar"))
@@ -69,6 +85,7 @@ class ManualHttpServiceDefinitionSpec extends Specification {
         client.configuration == config
         result == 'created'
         tcBar.save() == 'created'
+        tcBar.update() == "updated"
 
         cleanup:
         firstApp.close()
@@ -109,13 +126,16 @@ class ManualHttpServiceDefinitionSpec extends Specification {
         String index()
     }
 
-    @Client(id = "bar")
+    @Client("bar")
     static interface TestClientBar {
         @Post
         String save()
+
+        @Put("update")
+        String update()
     }
 
-    @Controller('/manual/http/service')
+    @Controller('manual/http/service')
     static class TestController {
         @Get
         String index() {
@@ -125,6 +145,11 @@ class ManualHttpServiceDefinitionSpec extends Specification {
         @Post
         String save() {
             return "created"
+        }
+
+        @Put("update")
+        String update() {
+            return "updated"
         }
     }
 }

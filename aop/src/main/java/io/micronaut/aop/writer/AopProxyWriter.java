@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.aop.writer;
 
 import io.micronaut.aop.HotSwappableInterceptedProxy;
@@ -27,6 +26,7 @@ import io.micronaut.context.BeanContext;
 import io.micronaut.context.BeanLocator;
 import io.micronaut.context.ExecutionHandleLocator;
 import io.micronaut.context.Qualifier;
+import io.micronaut.core.annotation.AnnotationClassValue;
 import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.naming.NameUtils;
 import io.micronaut.core.reflect.ReflectionUtils;
@@ -204,6 +204,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
             isInterface,
             parent.getAnnotationMetadata());
         startClass(classWriter, getInternalName(proxyFullName), getTypeReference(targetClassFullName));
+        processAlreadyVisitedMethods(parent);
     }
 
     /**
@@ -272,10 +273,18 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
         startClass(classWriter, proxyInternalName, getTypeReference(targetClassFullName));
     }
 
+    /**
+     * Is the target bean being proxied.
+     * @return True if the target bean is being proxied
+     */
+    public boolean isProxyTarget() {
+        return isProxyTarget;
+    }
+
     @Override
     protected void startClass(ClassVisitor classWriter, String className, Type superType) {
         String[] interfaces = getImplementedInterfaceInternalNames();
-        classWriter.visit(V1_8, ACC_PUBLIC, className, null, !isInterface ? superType.getInternalName() : null, interfaces);
+        classWriter.visit(V1_8, ACC_SYNTHETIC, className, null, !isInterface ? superType.getInternalName() : null, interfaces);
 
         classWriter.visitField(ACC_FINAL | ACC_PRIVATE, FIELD_INTERCEPTORS, FIELD_TYPE_INTERCEPTORS.getDescriptor(), null, null);
         classWriter.visitField(ACC_FINAL | ACC_PRIVATE, FIELD_PROXY_METHODS, FIELD_TYPE_PROXY_METHODS.getDescriptor(), null, null);
@@ -366,13 +375,13 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
 
     /**
      * Visit a method that is to be proxied.
-     *
-     * @param declaringType              The declaring type of the method. Either a Class or a string representing the name of the type
+     *  @param declaringType              The declaring type of the method. Either a Class or a string representing the name of the type
      * @param returnType                 The return type of the method. Either a Class or a string representing the name of the type
      * @param genericReturnType          The generic return type
      * @param returnTypeGenericTypes     Map containing the return generic types
      * @param methodName                 The method name
      * @param argumentTypes              The argument types. Note: an ordered map should be used such as LinkedHashMap. Can be null or empty.
+     * @param genericParameters          The generic argument types
      * @param argumentAnnotationMetadata The argument annotation metadata
      * @param genericTypes               The generic types of each argument. Can be null.
      * @param annotationMetadata         metadata
@@ -383,6 +392,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
                                   Map<String, Object> returnTypeGenericTypes,
                                   String methodName,
                                   Map<String, Object> argumentTypes,
+                                  Map<String, Object> genericParameters,
                                   Map<String, AnnotationMetadata> argumentAnnotationMetadata,
                                   Map<String, Map<String, Object>> genericTypes,
                                   AnnotationMetadata annotationMetadata) {
@@ -395,6 +405,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
             returnTypeGenericTypes,
             methodName,
             argumentTypes,
+            genericParameters,
             argumentAnnotationMetadata,
             genericTypes,
             annotationMetadata);
@@ -457,7 +468,17 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
 
             };
             executableMethodWriter.makeInner(proxyInternalName, classWriter);
-            executableMethodWriter.visitMethod(declaringType, returnType, genericReturnType, returnTypeGenericTypes, methodName, argumentTypes, argumentAnnotationMetadata, genericTypes);
+            executableMethodWriter.visitMethod(
+                    declaringType,
+                    returnType,
+                    genericReturnType,
+                    returnTypeGenericTypes,
+                    methodName,
+                    argumentTypes,
+                    genericParameters,
+                    argumentAnnotationMetadata,
+                    genericTypes
+            );
 
             proxiedMethods.add(executableMethodWriter);
             proxiedMethodsRefSet.add(methodKey);
@@ -567,7 +588,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
         this.constructArgumentMetadata = new LinkedHashMap<>(this.constructArgumentMetadata);
         this.constructArgumentMetadata.put("interceptors", new DefaultAnnotationMetadata() {{
             addDeclaredAnnotation(io.micronaut.context.annotation.Type.class.getName(), Collections.singletonMap(
-                "value", Arrays.stream(interceptorTypes).map(Type::getClassName).toArray()
+                "value", Arrays.stream(interceptorTypes).map(t -> new AnnotationClassValue(t.getClassName())).toArray()
             ));
         }});
         String constructorDescriptor = getConstructorDescriptor(constructorNewArgumentTypes.values());
@@ -685,9 +706,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
                         null, null
                     );
                     proxyConstructorGenerator.loadThis();
-                    proxyConstructorGenerator.newInstance(TYPE_READ_WRITE_LOCK);
-                    proxyConstructorGenerator.dup();
-                    proxyConstructorGenerator.invokeConstructor(TYPE_READ_WRITE_LOCK, METHOD_DEFAULT_CONSTRUCTOR);
+                    pushNewInstance(proxyConstructorGenerator, TYPE_READ_WRITE_LOCK);
                     proxyConstructorGenerator.putField(proxyType, FIELD_READ_WRITE_LOCK, TYPE_READ_WRITE_LOCK);
 
                     // Add Read Lock field
@@ -762,7 +781,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
             String[] adviceInterfaces = {Type.getInternalName(interceptedInterface)};
             interfaces = ArrayUtils.concat(interfaces, adviceInterfaces);
         }
-        proxyClassWriter.visit(V1_8, ACC_PUBLIC,
+        proxyClassWriter.visit(V1_8, ACC_SYNTHETIC,
             proxyInternalName,
             null,
             isInterface ? TYPE_OBJECT.getInternalName() : getTypeReference(targetClassFullName).getInternalName(),
@@ -1014,6 +1033,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
         Map<String, Object> returnTypeGenericTypes,
         String methodName,
         Map<String, Object> argumentTypes,
+        Map<String, Object> genericArgumentTypes,
         Map<String, AnnotationMetadata> argumentAnnotationMetadata,
         Map<String, Map<String, Object>> genericTypes,
         AnnotationMetadata annotationMetadata) {
@@ -1025,6 +1045,7 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
                 returnTypeGenericTypes,
                 methodName,
                 argumentTypes,
+                genericArgumentTypes,
                 argumentAnnotationMetadata,
                 genericTypes,
                 annotationMetadata
@@ -1338,6 +1359,35 @@ public class AopProxyWriter extends AbstractClassFileWriter implements ProxyingB
             proxyConstructorGenerator.invokeStatic(TYPE_INTERCEPTOR_CHAIN, Method.getMethod(RESOLVE_AROUND_INTERCEPTORS_METHOD));
         }
         proxyConstructorGenerator.visitInsn(AASTORE);
+    }
+
+    private void processAlreadyVisitedMethods(BeanDefinitionWriter parent) {
+        final List<BeanDefinitionWriter.MethodVisitData> postConstructMethodVisits = parent.getPostConstructMethodVisits();
+        for (BeanDefinitionWriter.MethodVisitData methodVisit : postConstructMethodVisits) {
+            visitPostConstructMethod(
+                    methodVisit.getDeclaringType(),
+                    methodVisit.isRequiresReflection(),
+                    methodVisit.getReturnType(),
+                    methodVisit.getMethodName(),
+                    methodVisit.getArgumentTypes(),
+                    methodVisit.getArgumentAnnotationMetadata(),
+                    methodVisit.getGenericTypes(),
+                    methodVisit.getAnnotationMetadata()
+            );
+        }
+        final List<BeanDefinitionWriter.MethodVisitData> preDestroyMethodVisits = parent.getPreDestroyMethodVisits();
+        for (BeanDefinitionWriter.MethodVisitData methodVisit : preDestroyMethodVisits) {
+            visitPreDestroyMethod(
+                    methodVisit.getDeclaringType(),
+                    methodVisit.isRequiresReflection(),
+                    methodVisit.getReturnType(),
+                    methodVisit.getMethodName(),
+                    methodVisit.getArgumentTypes(),
+                    methodVisit.getArgumentAnnotationMetadata(),
+                    methodVisit.getGenericTypes(),
+                    methodVisit.getAnnotationMetadata()
+            );
+        }
     }
 
     /**

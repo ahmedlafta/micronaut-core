@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.runtime.server;
 
 import io.micronaut.runtime.EmbeddedApplication;
@@ -60,4 +59,13 @@ public interface EmbeddedServer extends EmbeddedApplication<EmbeddedServer> {
         return true;
     }
 
+
+    /**
+     * Most servers provide a way to block such that the server doesn't exit, however some require the creation of a keep alive thread.
+     *
+     * @return True if the server should be kept alive.
+     */
+    default boolean isKeepAlive() {
+        return true;
+    }
 }

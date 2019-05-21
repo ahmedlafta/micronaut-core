@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.http.resource;
 
-import io.micronaut.context.annotation.Bean;
+import io.micronaut.context.annotation.BootstrapContextCompatible;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.env.Environment;
 import io.micronaut.context.exceptions.ConfigurationException;
@@ -32,7 +31,6 @@ import io.micronaut.core.io.scan.DefaultClassPathResourceLoader;
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import java.io.FileNotFoundException;
 import java.net.URL;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +44,7 @@ import java.util.Optional;
  * @since 1.0
  */
 @Factory
+@BootstrapContextCompatible
 public class ResourceLoaderFactory {
 
     private final ClassLoader classLoader;
@@ -74,7 +73,7 @@ public class ResourceLoaderFactory {
      * @return The class path resource loader
      */
     @Singleton
-    @Bean
+    @BootstrapContextCompatible
     protected @Nonnull ClassPathResourceLoader getClassPathResourceLoader() {
         return new DefaultClassPathResourceLoader(classLoader);
     }
@@ -83,6 +82,7 @@ public class ResourceLoaderFactory {
      * @return The file system resource loader
      */
     @Singleton
+    @BootstrapContextCompatible
     protected @Nonnull FileSystemResourceLoader fileSystemResourceLoader() {
         return new DefaultFileSystemResourceLoader();
     }
@@ -92,6 +92,7 @@ public class ResourceLoaderFactory {
      * @return The resource resolver
      */
     @Singleton
+    @BootstrapContextCompatible
     protected @Nonnull ResourceResolver resourceResolver(@Nonnull List<ResourceLoader> resourceLoaders) {
         return new ResourceResolver(resourceLoaders);
     }

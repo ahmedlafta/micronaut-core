@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.http.hateoas;
 
 import io.micronaut.core.annotation.Internal;
+import io.micronaut.core.annotation.Introspected;
 import io.micronaut.core.convert.value.ConvertibleValues;
 import io.micronaut.core.util.StringUtils;
 import io.micronaut.core.value.OptionalMultiValues;
@@ -40,6 +40,7 @@ import java.util.Optional;
  * @since 1.1
  */
 @Produces(MediaType.APPLICATION_HAL_JSON)
+@Introspected
 public abstract class AbstractResource<Impl extends AbstractResource> implements Resource {
 
     private final Map<CharSequence, List<Link>> linkMap = new LinkedHashMap<>(1);

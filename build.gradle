@@ -1,5 +1,6 @@
 buildscript {
     repositories {
+        mavenLocal()
         maven { url "https://repo.grails.org/grails/core" }
     }
     dependencies {
@@ -22,7 +23,8 @@ buildscript {
 }
 
 plugins {
-    id 'com.github.hierynomus.license' version '0.14.0' apply false
+    id 'com.github.hierynomus.license' version '0.15.0' apply false
+    id 'com.github.ben-manes.versions' version '0.21.0'
 }
 
 apply plugin: "io.sdkman.vendors"
@@ -30,7 +32,7 @@ apply plugin: 'org.aim42.htmlSanityCheck'
 
 repositories {
     maven { url "https://repo.grails.org/grails/core" }
-    maven { url "http://oss.sonatype.org/content/repositories/snapshots/" }
+    maven { url "https://oss.sonatype.org/content/repositories/snapshots/" }
 }
 
 version project.projectVersion
@@ -55,7 +57,20 @@ ext {
                     version: gormVersion,
                     group  : 'org.grails',
                     name   : 'grails-datastore-core',
-                    modules: ['grails-datastore-gorm', 'grails-datastore-gorm-hibernate5']
+                    modules: [
+                            'grails-datastore-gorm',
+                            'grails-datastore-async',
+                            'grails-datastore-gorm-async',
+                            'grails-datastore-gorm-support',
+                            'grails-datastore-gorm-test',
+                            'grails-datastore-gorm-validation',
+                            'grails-datastore-gorm-web'
+                    ]
+            ],
+            'gorm.hibernate'                       : [
+                    version: gormHibernateVersion,
+                    group  : 'org.grails',
+                    name   : 'grails-datastore-gorm-hibernate5'
             ],
             jackson                    : [
                     version: jacksonVersion,
@@ -66,7 +81,8 @@ ext {
             'jackson.modules'          : [
                     version: jacksonVersion,
                     group  : 'com.fasterxml.jackson.module',
-                    name   : 'jackson-module-afterburner'
+                    name   : 'jackson-module-afterburner',
+                    modules: ['jackson-module-kotlin', 'jackson-module-parameter-names', 'jackson-module-jaxb-annotations']
             ],
             'jackson.datatype'         : [
                     version: jacksonVersion,
@@ -110,11 +126,53 @@ ext {
                     name:'micronaut-kafka',
                     modules:['micronaut-kafka-streams']
             ],
+            'micronaut.rabbitmq': [
+                    version:micronautRabbitMQVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-rabbitmq'
+            ],
+            'micronaut.graphql': [
+                    version:micronautGraphQLVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-graphql'
+            ],
             'micronaut.groovy': [
                     version:micronautGroovyVersion,
                     group:'io.micronaut',
                     name:'micronaut-runtime-groovy',
                     modules:['micronaut-function-groovy']
+            ],
+            'micronaut.aws': [
+                    version:micronautAwsVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-aws-common'
+            ],
+            'micronaut.gcp': [
+                    version:micronautGcpVersion,
+                    group:'io.micronaut.gcp',
+                    name:'micronaut-gcp-common',
+                    modules:['micronaut-gcp-tracing']
+            ],
+            'micronaut.elasticsearch': [
+                version:micronautElasticsearch,
+                group:'io.micronaut.configuration',
+                name:'micronaut-elasticsearch'
+            ],
+            'micronaut.flyway': [
+                version:micronautFlyway,
+                group:'io.micronaut.configuration',
+                name:'micronaut-flyway'
+            ],
+            'micronaut.function-aws': [
+                    version:micronautAwsVersion,
+                    group:'io.micronaut',
+                    name:'micronaut-function-aws'
+            ],
+            'micronaut.function.aws': [
+                    version:micronautAwsVersion,
+                    group:'io.micronaut.aws',
+                    name:'micronaut-function-aws-api-proxy',
+                    modules: ['micronaut-function-aws-custom-runtime', 'micronaut-function-aws-alexa']
             ],
             'micronaut.gorm': [
                     version:micronautGroovyVersion,
@@ -122,11 +180,21 @@ ext {
                     name:'micronaut-gorm-common',
                     modules:['micronaut-multitenancy-gorm', 'micronaut-neo4j-gorm', 'micronaut-mongo-gorm', 'micronaut-hibernate-gorm']
             ],
+            'micronaut.liquibase': [
+                version:micronautLiquibase,
+                group:'io.micronaut.configuration',
+                name:'micronaut-liquibase'
+            ],
             'micronaut.netflix': [
                     version:micronautNetflixVersion,
                     group:'io.micronaut.configuration',
                     name:'micronaut-netflix-archaius',
                     modules:['micronaut-netflix-hystrix', 'micronaut-netflix-ribbon']
+            ],
+            'micronaut.openapi': [
+                    version:micronautOpenApi,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-openapi'
             ],
             kafka                      : [
                     version: kafkaVersion,
@@ -152,6 +220,12 @@ ext {
                     name   : 'micrometer-core',
                     modules: ['micrometer-registry-atlas', 'micrometer-registry-graphite', 'micrometer-registry-prometheus', 'micrometer-registry-statsd']
             ],
+            'junit5'               : [
+                    version: junit5Version,
+                    group  : 'org.junit.jupiter',
+                    name   : 'junit-jupiter-api',
+                    modules: ['junit-jupiter-engine', 'junit-jupiter-params']
+            ],
             'micronaut.micrometer': [
                     version:micronautMicrometerVersion,
                     group:'io.micronaut.configuration',
@@ -159,13 +233,40 @@ ext {
                     modules:['micronaut-micrometer-registry-atlas', 'micronaut-micrometer-registry-graphite',
                              'micronaut-micrometer-registry-prometheus', 'micronaut-micrometer-registry-statsd'  ]
             ],
+            'micronaut.spring': [
+                    version:micronautSpringVersion,
+                    group:'io.micronaut.spring',
+                    name:'micronaut-spring-annotation',
+                    modules:['micronaut-spring-boot', 'micronaut-spring-boot-annotation', 'micronaut-spring-context', 'micronaut-spring-web', 'micronaut-spring-web-annotation']
+            ],
+            'micronaut.sql': [
+                    version:micronautSqlVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-hibernate-jpa',
+                    modules:['micronaut-jdbc-tomcat', 'micronaut-jdbc-hikari', 'micronaut-jdbc-dbcp', 'micronaut-postgres-reactive', 'micronaut-jasync-sql']
+            ],
+            'micronaut.mongo': [
+                    version:micronautMongoVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-mongo-reactive'
+            ],
+            'micronaut.redis': [
+                    version:micronautRedisVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-redis-lettuce'
+            ],
+            'micronaut.neo4j': [
+                    version:micronautNeo4jVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-neo4j-bolt'
+            ],
             'mongo' : [
                     version: mongoVersion,
                     group  : 'org.mongodb',
                     modules: ['mongodb-driver-async', 'mongo-java-driver']
             ],
             'mongo.reactive'           : [
-                    version: '1.8.0',
+                    version: mongoReactiveVersion,
                     group  : 'org.mongodb',
                     name   : 'mongodb-driver-reactivestreams'
             ],
@@ -174,10 +275,10 @@ ext {
                     group  : 'org.neo4j.test',
                     name   : 'neo4j-harness'
             ],
-            'neo4j.bolt'               : [
-                    version: '1.6.2',
-                    group  : 'org.neo4j.driver',
-                    name   : 'neo4j-java-driver'
+            'neo4j.bolt': [
+                    version: neo4jDriverVersion,
+                    group:'org.neo4j.driver',
+                    name:'neo4j-java-driver'
             ],
             'jcache'                   : [
                     version: jcacheVersion,
@@ -193,10 +294,11 @@ ext {
                               'netty-codec-redis', 'netty-codec-smtp', 'netty-codec-socks', 'netty-codec-stomp',
                               'netty-codec-xml', 'netty-common', 'netty-dev-tools', 'netty-handler',
                               'netty-handler-proxy', 'netty-resolver', 'netty-resolver-dns', 'netty-transport',
-                              'netty-transport-rxtx', 'netty-transport-sctp', 'netty-transport-udt']
+                              'netty-transport-rxtx', 'netty-transport-sctp', 'netty-transport-udt',
+                              'netty-transport-native-epoll', 'netty-transport-native-kqueue']
             ],
             opentracing                : [
-                    version: '0.31.0',
+                    version: opentracingVersion,
                     group  : 'io.opentracing',
                     name   : 'opentracing-api',
                     modules: ['opentracing-util']
@@ -317,10 +419,25 @@ ext {
                     name   : 'hibernate-core',
                     modules: ['hibernate-jcache', 'hibernate-ehcache']
             ],
+            elasticsearch              : [
+                    version: elasticsearchVersion,
+                    group  : 'org.elasticsearch.client',
+                    name   : 'elasticsearch-rest-high-level-client'
+            ],
             'methvin.directory-watcher': [
                     version: methvinDirectoryWatcherVersion,
                     group  : 'io.methvin',
                     name   : 'directory-watcher'
+            ],
+            'micronaut.security'       : [
+                    version : micronautSecurityVersion,
+                    group   : 'io.micronaut',
+                    modules : ['micronaut-security', 'micronaut-security-jwt', 'micronaut-security-session']
+            ],
+            'micronaut.security.configuration'  : [
+                    version : micronautSecurityVersion,
+                    group   : 'io.micronaut.configuration',
+                    modules : ['micronaut-security-ldap', 'micronaut-security-oauth2']
             ]
     ]
 
@@ -414,7 +531,7 @@ subprojects { Project subproject ->
 
 
     repositories {
-        maven { url "http://oss.sonatype.org/content/repositories/snapshots/" }
+        maven { url "https://oss.sonatype.org/content/repositories/snapshots/" }
         maven { url "https://repo.grails.org/grails/core" }
     }
 
@@ -423,7 +540,6 @@ subprojects { Project subproject ->
     } else {
         apply plugin: "groovy"
         apply plugin: "java"
-
 
         sourceCompatibility = '1.8'
         targetCompatibility = '1.8'
@@ -443,7 +559,7 @@ subprojects { Project subproject ->
                 configFile = rootProject.file('config/checkstyle/checkstyle.xml')
 
                 // Per submodule
-                maxErrors = 5
+                maxErrors = 0
                 maxWarnings = 10
 
                 showViolations = true
@@ -475,6 +591,7 @@ subprojects { Project subproject ->
         reports.html.enabled = !System.getenv("TRAVIS")
         reports.junitXml.enabled = !System.getenv("TRAVIS")
 
+        systemProperty "micronaut.cloud.platform", "OTHER"
     }
 
     tasks.withType(Checkstyle) {
@@ -486,7 +603,6 @@ subprojects { Project subproject ->
 
     configurations {
         shadowCompile
-        shadowRuntime
         documentation
         all {
             resolutionStrategy.eachDependency { DependencyResolveDetails details ->
@@ -500,6 +616,16 @@ subprojects { Project subproject ->
             }
         }
     }
+
+    apply plugin: 'com.github.johnrengelman.shadow'
+
+    shadowJar {
+        configurations = [project.configurations.shadowCompile]
+        relocate "com.github.benmanes.caffeine", "io.micronaut.caffeine"
+        relocate "org.objectweb.asm", "io.micronaut.asm"
+    }
+    
+    shadowJar.enabled = false
 
     def isDocumented = subproject.name != 'inject' && subproject.name != 'core' && subproject.name != 'aop' && !subproject.name.contains('asciidoc-config-props')
 
@@ -657,3 +783,16 @@ htmlSanityCheck {
 
 }
 docs.finalizedBy(htmlSanityCheck)
+
+dependencyUpdates.resolutionStrategy {
+    componentSelection { rules ->
+        rules.all { ComponentSelection selection ->
+            boolean rejected = ['alpha', 'beta', 'rc', 'cr', 'm', 'preview', 'b', 'ea'].any { qualifier ->
+                selection.candidate.version ==~ /(?i).*[.-]$qualifier[.\d-+]*/
+            }
+            if (rejected) {
+                selection.reject('Release candidate')
+            }
+        }
+    }
+}

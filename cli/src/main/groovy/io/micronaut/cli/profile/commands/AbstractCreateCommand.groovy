@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.cli.profile.commands
 
 import groovy.transform.CompileDynamic
@@ -63,14 +62,16 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
     @Option(names = ['-i', '--inplace'], description = 'Create a service using the current directory')
     boolean inplace
 
-    @Option(names = ['-p', '--profile'], paramLabel = 'PROFILE', description = 'The profile to use', completionCandidates = ProfileCompletionCandidates)
+    @Option(names = ['-p', '--profile'], paramLabel = 'PROFILE', description = 'The profile to use. Possible values: ${COMPLETION-CANDIDATES}.', completionCandidates = ProfileCompletionCandidates)
     String profile
 
-    @Option(names = ['-f', '--features'], paramLabel = 'FEATURE', split = ",", description = 'The features to use', completionCandidates = FeatureCompletionCandidates)
+    @Option(names = ['-f', '--features'], paramLabel = 'FEATURE', split = ",", description = 'The features to use. Possible values: ${COMPLETION-CANDIDATES}', completionCandidates = FeatureCompletionCandidates)
     List<String> features = []
 
     @Mixin
     private CommonOptionsMixin autoHelp // adds help, and version options to the command
+
+    private Map<URL, File> unzippedDirectories = new LinkedHashMap<URL, File>()
 
     String appname
     String groupname
@@ -328,10 +329,11 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
                 def location = f.location
 
                 File skeletonDir
+                File tmpDir
                 if (location instanceof FileSystemResource) {
                     skeletonDir = location.createRelative("skeleton").file
                 } else {
-                    File tmpDir = unzipProfile(ant, location)
+                    tmpDir = unzipProfile(ant, location)
                     skeletonDir = new File(tmpDir, "META-INF/profile/features/$f.name/skeleton")
                 }
 
@@ -339,13 +341,15 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
 
                 appendFeatureFiles(skeletonDir, cmd.build)
 
+                List<String> featureExcludes = ['**/' + APPLICATION_YML]
+                featureExcludes.addAll(profileInstance.skeletonExcludes)
+
                 if (skeletonDir.exists()) {
-                    copySrcToTarget(ant, skeletonDir, ['**/' + APPLICATION_YML], profileInstance.binaryExtensions)
-                    copySrcToTarget(ant, new File(skeletonDir, cmd.build + "-build"), ['**/' + APPLICATION_YML], profileInstance.binaryExtensions)
+                    copySrcToTarget(ant, skeletonDir, featureExcludes, profileInstance.binaryExtensions)
+                    copySrcToTarget(ant, new File(skeletonDir, cmd.build + "-build"), featureExcludes, profileInstance.binaryExtensions)
                     ant.chmod(dir: targetDirectory, includes: profileInstance.executablePatterns.join(' '), perm: 'u+x')
                 }
             }
-
             replaceBuildTokens(cmd.build, profileInstance, features, projectTargetDirectory)
 
             messageOnComplete(cmd.console, cmd, projectTargetDirectory)
@@ -359,6 +363,18 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
             MicronautConsole.getInstance().error "Cannot find profile $profileName"
             return false
         }
+    }
+
+    @Override
+    void reset() {
+        variables = [:]
+        inplace = false
+        profile = null
+        features = []
+        appname = null
+        groupname = null
+        defaultpackagename = null
+        targetDirectory = null
     }
 
     protected void messageOnComplete(MicronautConsole console, CreateServiceCommandObject command, File targetDir) {
@@ -384,8 +400,6 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
         }
         return true
     }
-
-    private Map<URL, File> unzippedDirectories = new LinkedHashMap<URL, File>()
 
     @CompileDynamic
     protected File unzipProfile(AntBuilder ant, Resource location) {
@@ -431,9 +445,9 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
 
         BuildTokens buildTokens
         if (build == "gradle") {
-            buildTokens = new GradleBuildTokens(sourceLanguage, testFramework)
+            buildTokens = new GradleBuildTokens(appname, sourceLanguage, testFramework)
         } else if (build == "maven") {
-            buildTokens = new MavenBuildTokens(sourceLanguage, testFramework)
+            buildTokens = new MavenBuildTokens(appname, sourceLanguage, testFramework)
         } else {
             return
         }
@@ -536,8 +550,9 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
 
             requestedFeatures.removeAll(allFeatureNames)
             requestedFeatures.each { String invalidFeature ->
+                int idx = Math.min(invalidFeature.size(), 2)
                 List possibleSolutions = allFeatureNames.findAll {
-                    it.substring(0, 2) == invalidFeature.substring(0, 2)
+                    it.substring(0, idx) == invalidFeature.substring(0, idx)
                 }
                 StringBuilder warning = new StringBuilder("Feature ${invalidFeature} does not exist in the profile ${profile.name}!")
                 if (possibleSolutions) {
@@ -604,11 +619,17 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
         Integer javaVersion = VersionInfo.getJavaVersion()
         features = features.findAll { it.isSupported(javaVersion) }
 
+        def evicted = features.collect() { it.evictedFeatureNames }.flatten()
+        if (evicted) {
+            features.removeIf { evicted.contains(it.name) }
+        }
+
         List<String> oneOfFeatureNames = []
         profile.oneOfFeatures.each { g ->
             oneOfFeatureNames.addAll(g.oneOfFeatures*.feature*.name)
         }
 
+        List<Feature> dependentFeatures = []
         for (int i = 0; i < features.size(); i++) {
             Feature feature = features[i]
 
@@ -620,13 +641,20 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
                         if (feature.requested) {
                             d.requested = true
                         }
-                        features.add(d)
+                        dependentFeatures.add(d)
                     }
                 }
             }
         }
 
-        features
+        if (dependentFeatures) {
+            Set<Feature> newFeatures = new LinkedHashSet<>()
+            newFeatures.addAll(dependentFeatures)
+            newFeatures.addAll(features)
+            return newFeatures
+        } else {
+            return features
+        }
     }
 
     protected static String getLanguage(Set<Feature> features) {
@@ -713,26 +741,38 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
         variables['version'] = micronautVersion
         variables['app.name'] = appname
         variables['app.group'] = groupname
+        variables['jansi'] = isWindows() ? "false" : "true"
+    }
+
+    private boolean isWindows() {
+        System.getProperty("os.name")?.toLowerCase(Locale.ENGLISH)?.contains("windows")
     }
 
     private String establishGroupAndAppName(String groupAndAppName) {
-        String defaultPackage
-        List<String> parts = groupAndAppName.split(/\./) as List
-        if (parts.size() == 1) {
-            appname = parts[0]
-            defaultPackage = createValidPackageName()
-            groupname = defaultPackage
-        } else {
-            appname = parts[-1]
-            groupname = parts[0..-2].join('.')
-            defaultPackage = groupname
-        }
+        String[] groupApp = groupAppName(groupAndAppName)
+        appname = groupApp[1]
+        groupname = groupApp[0]
 
-        return defaultPackage
+        return groupname
     }
 
-    private String createValidPackageName() {
-        String defaultPackage = appname.split(/[-]+/).collect { String token -> (token.toLowerCase().toCharArray().findAll { char ch -> Character.isJavaIdentifierPart(ch) } as char[]) as String }.join('.')
+    protected String[] groupAppName(String groupAndAppName) {
+        String packageName
+        String appName
+        List<String> parts = groupAndAppName.split(/\./) as List
+        if (parts.size() == 1) {
+            appName = parts[0]
+            packageName = createValidPackageName(appName)
+        } else {
+            appName = parts[-1]
+            packageName = parts[0..-2].join('.')
+        }
+
+        [packageName, appName] as String[]
+    }
+
+    private String createValidPackageName(String appName) {
+        String defaultPackage = appName.split(/[-]+/).collect { String token -> (token.toLowerCase().toCharArray().findAll { char ch -> Character.isJavaIdentifierPart(ch) } as char[]) as String }.join('.')
         if (!NameUtils.isValidJavaPackage(defaultPackage)) {
             throw new IllegalArgumentException("Cannot create a valid package name for [$appname]. Please specify a name that is also a valid Java package.")
         }
@@ -753,11 +793,12 @@ abstract class AbstractCreateCommand extends ArgumentCompletingCommand implement
 
         def skeletonResource = participatingProfile.profileDir.createRelative("skeleton")
         File skeletonDir
+        File tmpDir
         if (skeletonResource instanceof FileSystemResource) {
             skeletonDir = skeletonResource.file
         } else {
             // establish the JAR file name and extract
-            def tmpDir = unzipProfile(ant, skeletonResource)
+            tmpDir = unzipProfile(ant, skeletonResource)
             skeletonDir = new File(tmpDir, "META-INF/profile/skeleton")
         }
         copySrcToTarget(ant, skeletonDir, excludes, profile.binaryExtensions)

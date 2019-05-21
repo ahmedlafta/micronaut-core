@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.web.router;
 
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.ExecutionHandleLocator;
 import io.micronaut.context.env.Environment;
 import io.micronaut.core.convert.ConversionService;
+import io.micronaut.core.naming.NameResolver;
 import io.micronaut.core.naming.NameUtils;
 import io.micronaut.core.naming.conventions.TypeConvention;
 import io.micronaut.core.type.Argument;
@@ -384,7 +384,16 @@ public abstract class DefaultRouteBuilder implements RouteBuilder {
         return buildRoute(httpMethod, uri, executableHandle);
     }
 
-    private UriRoute buildRoute(HttpMethod httpMethod, String uri, MethodExecutionHandle<?, Object> executableHandle) {
+    /**
+     * Build a route.
+     *
+     * @param httpMethod The HTTP method
+     * @param uri The URI
+     * @param executableHandle The executable handle
+     *
+     * @return an {@link UriRoute}
+     */
+    protected UriRoute buildRoute(HttpMethod httpMethod, String uri, MethodExecutionHandle<?, Object> executableHandle) {
         DefaultUriRoute route;
         if (currentParentRoute != null) {
             route = new DefaultUriRoute(httpMethod, currentParentRoute.uriMatchTemplate.nest(uri), executableHandle);
@@ -398,6 +407,10 @@ public abstract class DefaultRouteBuilder implements RouteBuilder {
 
     private UriRoute buildBeanRoute(HttpMethod httpMethod, String uri, BeanDefinition<?> beanDefinition, ExecutableMethod<?, ?> method) {
         io.micronaut.context.Qualifier<?> qualifier = beanDefinition.getAnnotationTypeByStereotype(Qualifier.class).map(aClass -> Qualifiers.byAnnotation(beanDefinition, aClass)).orElse(null);
+        if (qualifier == null && beanDefinition.isIterable() && beanDefinition instanceof NameResolver) {
+            qualifier = ((NameResolver) beanDefinition).resolveName()
+                    .map(Qualifiers::byName).orElse(null);
+        }
         MethodExecutionHandle<?, Object> executionHandle = executionHandleLocator.findExecutionHandle(beanDefinition.getBeanType(), qualifier, method.getMethodName(), method.getArgumentTypes())
                 .orElseThrow(() -> new RoutingException("No such route: " + beanDefinition.getBeanType().getName() + "." + method));
         return buildRoute(httpMethod, uri, executionHandle);

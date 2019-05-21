@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@ import io.micronaut.http.annotation.Patch
 import io.micronaut.http.annotation.Post
 import io.micronaut.http.client.annotation.Client
 import io.micronaut.runtime.server.EmbeddedServer
+import io.reactivex.Flowable
+import io.reactivex.Single
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 import spock.lang.Specification
@@ -44,7 +46,6 @@ class BlockingCrudSpec extends Specification {
     ApplicationContext context = ApplicationContext.run()
 
     @Shared
-    @AutoCleanup
     EmbeddedServer embeddedServer = context.getBean(EmbeddedServer).start()
 
     void "test configured client"() {
@@ -98,14 +99,23 @@ class BlockingCrudSpec extends Specification {
         bookAndResponse.status() == HttpStatus.OK
         bookAndResponse.body().title == "The Stand"
 
+        when:'the full response returns 404'
+        bookAndResponse = client.getResponse(-1)
+
+        then:
+        noExceptionThrown()
+        bookAndResponse.status() == HttpStatus.NOT_FOUND
 
         when:
         book = client.update(book.id, "The Shining")
+        books = client.list()
 
         then:
         book != null
         book.title == "The Shining"
         book.id == 1
+        books.size() == 1
+        books.first() instanceof Book
 
         when:
         client.delete(book.id)
@@ -156,6 +166,17 @@ class BlockingCrudSpec extends Specification {
 
         then:
         thrown(IllegalArgumentException)
+    }
+
+    void "test a declarative client void method and 404 response"() {
+        given:
+        VoidNotFoundClient client = context.getBean(VoidNotFoundClient)
+
+        when:
+        client.call()
+
+        then:
+        noExceptionThrown()
     }
 
     @Client('/blocking/books')
@@ -247,4 +268,12 @@ class BlockingCrudSpec extends Specification {
         Long id
         String title
     }
+
+    @Client("/void/404")
+    static interface VoidNotFoundClient {
+
+        @Get
+        void call()
+    }
+
 }

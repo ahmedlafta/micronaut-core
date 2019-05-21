@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.views.freemarker;
 
 import freemarker.template.Configuration;
@@ -66,6 +65,7 @@ public class FreemarkerViewsRendererConfigurationProperties implements Freemarke
 
     private boolean enabled = DEFAULT_ENABLED;
     private String defaultExtension = DEFAULT_EXTENSION;
+    private Version incompatibleImprovements = Configuration.DEFAULT_INCOMPATIBLE_IMPROVEMENTS;
 
     /**
      * Default contructor.
@@ -100,12 +100,6 @@ public class FreemarkerViewsRendererConfigurationProperties implements Freemarke
         this.enabled = enabled;
     }
 
-    /**
-     * @return The freemarker configuration
-     */
-    public @Nonnull Configuration getConfiguration() {
-        return configuration;
-    }
 
     /**
      * @return The default extension to use
@@ -116,10 +110,29 @@ public class FreemarkerViewsRendererConfigurationProperties implements Freemarke
 
     /**
      * Sets the default extension to use.
+     *
      * @param defaultExtension The default extension
      */
     public void setDefaultExtension(String defaultExtension) {
         ArgumentUtils.requireNonNull("defaultExtension", defaultExtension);
         this.defaultExtension = defaultExtension;
+    }
+
+    /**
+     * @return An optional version number
+     */
+    public Version getIncompatibleImprovements() {
+        return incompatibleImprovements;
+    }
+
+    /**
+     * the FreeMarker version number where the not 100% backward compatible bug fixes
+     * and improvements that you want to enable were already implemented. Defaults to
+     * {@link Configuration#DEFAULT_INCOMPATIBLE_IMPROVEMENTS}.
+     *
+     * @param incompatibleImprovements The version number
+     */
+    public void setIncompatibleImprovements(Version incompatibleImprovements) {
+        this.incompatibleImprovements = incompatibleImprovements;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.discovery.consul.client.v1;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategy;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import io.micronaut.core.annotation.ReflectiveAccess;
 import io.micronaut.core.convert.ConversionService;
 import io.micronaut.core.convert.value.ConvertibleMultiValues;
 import io.micronaut.http.HttpMethod;
@@ -75,6 +75,7 @@ public class HTTPCheck extends NewCheck {
      *
      * @param interval The interval
      */
+    @ReflectiveAccess
     protected void setInterval(String interval) {
         this.interval = ConversionService.SHARED.convert(interval, Duration.class).orElseThrow(() -> new IllegalArgumentException("Invalid Duration Specified"));
     }

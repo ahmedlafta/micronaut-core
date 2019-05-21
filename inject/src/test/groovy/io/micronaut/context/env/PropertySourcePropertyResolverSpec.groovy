@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package io.micronaut.context.env
 
+import io.micronaut.context.ApplicationContext
 import io.micronaut.context.exceptions.ConfigurationException
 import io.micronaut.core.value.MapPropertyResolver
 import io.micronaut.core.value.PropertyResolver
@@ -73,13 +74,21 @@ class PropertySourcePropertyResolverSpec extends Specification {
         where:
         property                      | value | key                           | type   | expected
         'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter.oauth2-access-token' | String | 'xxx'
-        'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter.oauth2.access.token' | String | 'xxx'
         'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter.oauth2.access-token' | String | 'xxx'
-        'MY_APP_MY_STUFF'             | 'xxx' | 'my-app.my-stuff'             | String | 'xxx'
+        'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter.oauth2.access.token' | String | 'xxx'
+        'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter.oauth2-access.token' | String | 'xxx'
+        'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter-oauth2.access.token' | String | 'xxx'
+        'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter-oauth2-access-token' | String | 'xxx'
+        'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter-oauth2.access-token' | String | 'xxx'
+        'TWITTER_OAUTH2_ACCESS_TOKEN' | 'xxx' | 'twitter-oauth2-access.token' | String | 'xxx'
         'MY_APP_MY_STUFF'             | 'xxx' | 'my.app.my.stuff'             | String | 'xxx'
         'MY_APP_MY_STUFF'             | 'xxx' | 'my.app.my-stuff'             | String | 'xxx'
+        'MY_APP_MY_STUFF'             | 'xxx' | 'my.app-my.stuff'             | String | 'xxx'
+        'MY_APP_MY_STUFF'             | 'xxx' | 'my.app-my-stuff'             | String | 'xxx'
+        'MY_APP_MY_STUFF'             | 'xxx' | 'my-app.my.stuff'             | String | 'xxx'
+        'MY_APP_MY_STUFF'             | 'xxx' | 'my-app.my-stuff'             | String | 'xxx'
+        'MY_APP_MY_STUFF'             | 'xxx' | 'my-app-my.stuff'             | String | 'xxx'
         'MY_APP_MY_STUFF'             | 'xxx' | 'my-app-my-stuff'             | String | 'xxx'
-
     }
 
     @Unroll
@@ -146,13 +155,13 @@ class PropertySourcePropertyResolverSpec extends Specification {
     void "test resolve placeholders for lists of map"() {
         given:
         def values = [
-                'foo.bar' : '10',
-                'foo.bar.list' : [
+                'foo.bar'     : '10',
+                'foo.bar.list': [
                         [
-                                'foo' : '${foo.bar}'
+                                'foo': '${foo.bar}'
                         ],
                         [
-                                'bar' : 'baz'
+                                'bar': 'baz'
                         ]
                 ]
         ]
@@ -192,15 +201,21 @@ class PropertySourcePropertyResolverSpec extends Specification {
         Map<String, Object> parameters = [foo: "bar"]
         PropertyResolver propertyResolver = new MapPropertyResolver(parameters)
         DefaultPropertyPlaceholderResolver propertyPlaceholderResolver = new DefaultPropertyPlaceholderResolver(propertyResolver)
+        List<DefaultPropertyPlaceholderResolver.Segment> segments = propertyPlaceholderResolver.buildSegments("Hello \${foo} \${bar:test}!")
 
         expect:
         propertyPlaceholderResolver.resolvePlaceholders(template).get() == "Hello bar!"
-        propertyPlaceholderResolver.resolvePropertyNames(template).size() == 1
-        propertyPlaceholderResolver.resolvePropertyNames(template).first().property == 'foo'
-
-        propertyPlaceholderResolver.resolvePropertyNames("Hello \${foo} \${bar:test}!").first().property == 'foo'
-        propertyPlaceholderResolver.resolvePropertyNames("Hello \${foo} \${bar:test}!")[1].property == 'bar'
-        propertyPlaceholderResolver.resolvePropertyNames("Hello \${foo} \${bar:test}!")[1].defaultValue.get() == 'test'
+        segments.size() == 5
+        segments[0] instanceof DefaultPropertyPlaceholderResolver.RawSegment
+        segments[1] instanceof DefaultPropertyPlaceholderResolver.PlaceholderSegment
+        segments[2] instanceof DefaultPropertyPlaceholderResolver.RawSegment
+        segments[3] instanceof DefaultPropertyPlaceholderResolver.PlaceholderSegment
+        segments[4] instanceof DefaultPropertyPlaceholderResolver.RawSegment
+        segments[0].getValue(String.class) == "Hello "
+        segments[1].getValue(String.class) == "bar"
+        segments[2].getValue(String.class) == " "
+        segments[3].getValue(String.class) == "test"
+        segments[4].getValue(String.class) == "!"
     }
 
     void "test random placeholders for properties"() {
@@ -288,4 +303,36 @@ class PropertySourcePropertyResolverSpec extends Specification {
         expect:
         resolver.getProperty("z", Boolean).isPresent()
     }
+
+    void "test retrieving a property as string then boolean"() {
+        given:
+        def applicationContext = ApplicationContext.run(['micronaut.security.enabled': true])
+
+        expect:
+        applicationContext.getProperty('micronaut.security.enabled', String).get() == "true"
+        applicationContext.getProperty('micronaut.security.enabled', Boolean).get() == true
+
+    }
+
+    void "test property lists with 3 entries or more"() {
+        given:
+        def values = new HashMap()
+        values.put('foo[0]', 'bar')
+        values.put('foo[1]', 'baz')
+        values.put('foo[2]', 'foo')
+        values.put('foo[3]', 'baar')
+        values.put('foo[4]', 'baaz')
+        values.put('foo[5]', 'fooo')
+        values.put('foo[15]', 'fooo')
+
+        PropertySourcePropertyResolver resolver = new PropertySourcePropertyResolver(
+                PropertySource.of("test", values)
+        )
+
+        expect:
+        resolver.getProperty("foo", List).get().get(0) == "bar"
+
+    }
+
+
 }

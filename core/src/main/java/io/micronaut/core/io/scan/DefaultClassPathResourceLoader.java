@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.core.io.scan;
 
 import io.micronaut.core.io.ResourceLoader;
@@ -76,9 +75,8 @@ public class DefaultClassPathResourceLoader implements ClassPathResourceLoader {
     public Optional<InputStream> getResourceAsStream(String path) {
         if (!isDirectory(path)) {
             return Optional.ofNullable(classLoader.getResourceAsStream(prefixPath(path)));
-        } else {
-            return Optional.empty();
         }
+        return Optional.empty();
     }
 
     /**
@@ -157,7 +155,7 @@ public class DefaultClassPathResourceLoader implements ClassPathResourceLoader {
                 try {
                     URI uri = url.toURI();
                     Path pathObject;
-                    synchronized (this) {
+                    synchronized (DefaultClassPathResourceLoader.class) {
 
                         if (uri.getScheme().equals("jar")) {
                             FileSystem fileSystem = null;
@@ -165,6 +163,9 @@ public class DefaultClassPathResourceLoader implements ClassPathResourceLoader {
                                 try {
                                     fileSystem = FileSystems.getFileSystem(uri);
                                 } catch (FileSystemNotFoundException e) {
+                                    //no-op
+                                }
+                                if (fileSystem == null || !fileSystem.isOpen()) {
                                     fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap(), classLoader);
                                 }
 
@@ -205,12 +206,10 @@ public class DefaultClassPathResourceLoader implements ClassPathResourceLoader {
         if (basePath != null) {
             if (path.startsWith("/")) {
                 return basePath + path.substring(1);
-            } else {
-                return basePath + path;
             }
-        } else {
-            return path;
+            return basePath + path;
         }
+        return path;
     }
 
 }

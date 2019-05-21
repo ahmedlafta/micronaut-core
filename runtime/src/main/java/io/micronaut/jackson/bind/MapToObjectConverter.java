@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.jackson.bind;
 
 import io.micronaut.core.bind.BeanPropertyBinder;
@@ -22,6 +21,8 @@ import io.micronaut.core.convert.TypeConverter;
 import io.micronaut.core.naming.NameUtils;
 import io.micronaut.core.reflect.InstantiationUtils;
 
+import javax.inject.Inject;
+import javax.inject.Provider;
 import javax.inject.Singleton;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -36,12 +37,22 @@ import java.util.Optional;
 @Singleton
 public class MapToObjectConverter implements TypeConverter<Map, Object> {
 
-    private final BeanPropertyBinder beanPropertyBinder;
+    private final Provider<BeanPropertyBinder> beanPropertyBinder;
+
+    /**
+     * @param beanPropertyBinder To bind map and Java bean properties
+     * @deprecated Use {@link #MapToObjectConverter(Provider)} instead
+     */
+    @Deprecated
+    public MapToObjectConverter(BeanPropertyBinder beanPropertyBinder) {
+        this(() -> beanPropertyBinder);
+    }
 
     /**
      * @param beanPropertyBinder To bind map and Java bean properties
      */
-    public MapToObjectConverter(BeanPropertyBinder beanPropertyBinder) {
+    @Inject
+    public MapToObjectConverter(Provider<BeanPropertyBinder> beanPropertyBinder) {
         this.beanPropertyBinder = beanPropertyBinder;
     }
 
@@ -60,7 +71,7 @@ public class MapToObjectConverter implements TypeConverter<Map, Object> {
                                     Object key = entry.getKey();
                                     bindMap.put(NameUtils.decapitalize(NameUtils.dehyphenate(key.toString())), entry.getValue());
                                 }
-                                return beanPropertyBinder.bind(object, bindMap);
+                                return beanPropertyBinder.get().bind(object, bindMap);
                             }
                     );
         }

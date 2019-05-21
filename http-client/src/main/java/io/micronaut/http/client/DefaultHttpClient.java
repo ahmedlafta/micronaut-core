@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.http.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micronaut.buffer.netty.NettyByteBufferFactory;
 import io.micronaut.context.BeanContext;
+import io.micronaut.context.annotation.BootstrapContextCompatible;
 import io.micronaut.context.annotation.Parameter;
 import io.micronaut.context.annotation.Primary;
 import io.micronaut.context.annotation.Prototype;
@@ -140,6 +140,7 @@ import java.util.function.Supplier;
 @Prototype
 @Primary
 @Internal
+@BootstrapContextCompatible
 public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStreamingHttpClient, RxSseClient, Closeable, AutoCloseable {
 
     protected static final String HANDLER_AGGREGATOR = "http-aggregator";
@@ -180,6 +181,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
     private final Charset defaultCharset;
     private final ChannelPoolMap<RequestKey, ChannelPool> poolMap;
     private final Logger log;
+    private final @Nullable Long readTimeoutMillis;
 
     private Set<String> clientIdentifiers = Collections.emptySet();
     private WebSocketBeanRegistry webSocketRegistry = WebSocketBeanRegistry.EMPTY;
@@ -243,6 +245,9 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                 .channel(NioSocketChannel.class)
                 .option(ChannelOption.SO_KEEPALIVE, true);
 
+        Optional<Duration> readTimeout = configuration.getReadTimeout();
+        this.readTimeoutMillis = readTimeout.map(duration -> !duration.isNegative() ? duration.toMillis() : null).orElse(null);
+
         HttpClientConfiguration.ConnectionPoolConfiguration connectionPoolConfiguration = configuration.getConnectionPoolConfiguration();
         if (connectionPoolConfiguration.isEnabled()) {
             int maxConnections = connectionPoolConfiguration.getMaxConnections();
@@ -255,12 +260,13 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
 
 
                         AbstractChannelPoolHandler channelPoolHandler = newPoolHandler(key);
+                        final Long acquireTimeoutMillis = connectionPoolConfiguration.getAcquireTimeout().map(Duration::toMillis).orElse(-1L);
                         return new FixedChannelPool(
                                 newBootstrap,
                                 channelPoolHandler,
                                 ChannelHealthChecker.ACTIVE,
-                                FixedChannelPool.AcquireTimeoutAction.FAIL,
-                                connectionPoolConfiguration.getAcquireTimeout().map(Duration::toMillis).orElse(-1L),
+                                acquireTimeoutMillis > -1 ? FixedChannelPool.AcquireTimeoutAction.FAIL : null,
+                                acquireTimeoutMillis,
                                 maxConnections,
                                 connectionPoolConfiguration.getMaxPendingAcquires()
 
@@ -346,7 +352,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
     public DefaultHttpClient(URL url, HttpClientConfiguration configuration) {
         this(
                 LoadBalancer.fixed(url), configuration, null, new DefaultThreadFactory(MultithreadEventLoopGroup.class),
-                createSslBuilder(), createDefaultMediaTypeRegistry(),
+                createSslBuilder(configuration), createDefaultMediaTypeRegistry(),
                 AnnotationMetadataResolver.DEFAULT
         );
     }
@@ -359,7 +365,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
     public DefaultHttpClient(URL url, HttpClientConfiguration configuration, String contextPath) {
         this(
                 LoadBalancer.fixed(url), configuration, contextPath, new DefaultThreadFactory(MultithreadEventLoopGroup.class),
-                createSslBuilder(), createDefaultMediaTypeRegistry(),
+                createSslBuilder(configuration), createDefaultMediaTypeRegistry(),
                 AnnotationMetadataResolver.DEFAULT
         );
     }
@@ -524,9 +530,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
         Flowable<Event<ByteBuffer<?>>> eventFlowable = Flowable.create(emitter ->
                 dataStream(request).subscribe(new Subscriber<ByteBuffer<?>>() {
                     private Subscription dataSubscription;
-                    private CurrentEvent currentEvent = new CurrentEvent(
-                            byteBufferFactory.getNativeAllocator().compositeBuffer(10)
-                    );
+                    private CurrentEvent currentEvent;
 
                     @Override
                     public void onSubscribe(Subscription s) {
@@ -558,11 +562,14 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                                     );
                                 } finally {
                                     currentEvent.data.release();
+                                    currentEvent = null;
+                                }
+                            } else {
+                                if (currentEvent == null) {
                                     currentEvent = new CurrentEvent(
                                             byteBufferFactory.getNativeAllocator().compositeBuffer(10)
                                     );
                                 }
-                            } else {
                                 int colonIndex = buffer.indexOf((byte) ':');
                                 // SSE comments start with colon, so skip
                                 if (colonIndex > 0) {
@@ -1033,7 +1040,13 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
 
             }, BackpressureStrategy.ERROR);
 
-            Publisher<io.micronaut.http.HttpResponse<O>> finalPublisher = applyFilterToResponsePublisher(parentRequest, request, requestURI, requestWrapper, responsePublisher);
+            Publisher<io.micronaut.http.HttpResponse<O>> finalPublisher = applyFilterToResponsePublisher(
+                    parentRequest,
+                    request,
+                    requestURI,
+                    requestWrapper,
+                    responsePublisher
+            );
             Flowable<io.micronaut.http.HttpResponse<O>> finalFlowable;
             if (finalPublisher instanceof Flowable) {
                 finalFlowable = (Flowable<io.micronaut.http.HttpResponse<O>>) finalPublisher;
@@ -1045,16 +1058,19 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
             if (readTimeout.isPresent()) {
                 // add an additional second, because generally the timeout should occur
                 // from the Netty request handling pipeline
-                Duration duration = readTimeout.get().plus(Duration.ofSeconds(1));
-                finalFlowable = finalFlowable.timeout(
-                        duration.toMillis(),
-                        TimeUnit.MILLISECONDS
-                ).onErrorResumeNext(throwable -> {
-                    if (throwable instanceof TimeoutException) {
-                        return Flowable.error(ReadTimeoutException.TIMEOUT_EXCEPTION);
-                    }
-                    return Flowable.error(throwable);
-                });
+                final Duration rt = readTimeout.get();
+                if (!rt.isNegative()) {
+                    Duration duration = rt.plus(Duration.ofSeconds(1));
+                    finalFlowable = finalFlowable.timeout(
+                            duration.toMillis(),
+                            TimeUnit.MILLISECONDS
+                    ).onErrorResumeNext(throwable -> {
+                        if (throwable instanceof TimeoutException) {
+                            return Flowable.error(ReadTimeoutException.TIMEOUT_EXCEPTION);
+                        }
+                        return Flowable.error(throwable);
+                    });
+                }
             }
             return finalFlowable.subscribeOn(scheduler);
         };
@@ -1229,7 +1245,8 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
         final SslContext sslCtx;
         if (uriObject.getScheme().equals("https")) {
             sslCtx = sslContext;
-            if (sslCtx == null) {
+            //Allow https requests to be sent if SSL is disabled but a proxy is present
+            if (sslCtx == null && !configuration.getProxyAddress().isPresent()) {
                 throw new HttpClientException("Cannot send HTTPS request. SSL is disabled");
             }
         } else {
@@ -1448,7 +1465,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                             throw new CodecException("Cannot encode value [" + o + "]. No possible encoders found");
                         });
 
-                        if (!isSingle && requestContentType == MediaType.APPLICATION_JSON_TYPE) {
+                        if (!isSingle && MediaType.APPLICATION_JSON_TYPE.equals(requestContentType)) {
                             requestBodyPublisher = requestBodyPublisher.map(new Function<HttpContent, HttpContent>() {
                                 boolean first = true;
 
@@ -1665,7 +1682,10 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
 
     private <I> void prepareHttpHeaders(URI requestURI, io.micronaut.http.HttpRequest<I> request, io.netty.handler.codec.http.HttpRequest nettyRequest, boolean permitsBody, boolean closeConnection) {
         HttpHeaders headers = nettyRequest.headers();
-        headers.set(HttpHeaderNames.HOST, getHostHeader(requestURI));
+
+        if (!headers.contains(HttpHeaderNames.HOST)) {
+            headers.set(HttpHeaderNames.HOST, getHostHeader(requestURI));
+        }
 
         if (closeConnection) {
             headers.set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
@@ -1686,6 +1706,8 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                 } else {
                     headers.set(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED);
                 }
+            } else {
+                headers.set(HttpHeaderNames.CONTENT_LENGTH, 0);
             }
         }
     }
@@ -1698,9 +1720,10 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
             Emitter<io.micronaut.http.HttpResponse<O>> emitter,
             Argument<O> bodyType, Argument<E> errorType) {
         ChannelPipeline pipeline = channel.pipeline();
-        pipeline.addLast(HANDLER_MICRONAUT_FULL_HTTP_RESPONSE, new SimpleChannelInboundHandler<FullHttpResponse>(false) {
+        final SimpleChannelInboundHandler<FullHttpResponse> newHandler = new SimpleChannelInboundHandler<FullHttpResponse>(false) {
 
             AtomicBoolean complete = new AtomicBoolean(false);
+            boolean keepAlive = true;
 
             @Override
             protected void channelRead0(ChannelHandlerContext channelHandlerContext, FullHttpResponse fullResponse) {
@@ -1772,7 +1795,6 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                         }
                     }
                 } finally {
-                    pipeline.remove(this);
                     if (fullResponse.refCnt() > 0) {
                         try {
                             ReferenceCountUtil.release(fullResponse);
@@ -1782,14 +1804,24 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                             }
                         }
                     }
-                    if (channelPool != null) {
-                        Channel ch = channelHandlerContext.channel();
-                        if (!HttpUtil.isKeepAlive(fullResponse)) {
-                            ch.closeFuture().addListener(future -> channelPool.release(ch));
-                        } else {
-                            channelPool.release(ch);
-                        }
+                    if (!HttpUtil.isKeepAlive(fullResponse)) {
+                        keepAlive = false;
+                    }
+                    pipeline.remove(this);
 
+                }
+            }
+
+            @Override
+            public void handlerRemoved(ChannelHandlerContext ctx) {
+                if (channelPool != null) {
+                    final Channel ch = ctx.channel();
+                    if (!keepAlive) {
+                        ch.closeFuture().addListener((future ->
+                                channelPool.release(ch)
+                        ));
+                    } else {
+                        channelPool.release(ch);
                     }
                 }
             }
@@ -1816,10 +1848,12 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                         }
                     }
                 } finally {
+                    keepAlive = false;
                     pipeline.remove(this);
                 }
             }
-        });
+        };
+        pipeline.addLast(HANDLER_MICRONAUT_FULL_HTTP_RESPONSE, newHandler);
     }
 
     private ClientFilterChain buildChain(AtomicReference<io.micronaut.http.HttpRequest> requestWrapper, List<HttpClientFilter> filters) {
@@ -1935,8 +1969,8 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
         );
     }
 
-    private static NettyClientSslBuilder createSslBuilder() {
-        return new NettyClientSslBuilder(new ClientSslConfiguration(), new ResourceResolver());
+    private static NettyClientSslBuilder createSslBuilder(HttpClientConfiguration configuration) {
+        return new NettyClientSslBuilder(configuration.getSslConfiguration());
     }
 
     private <I> NettyRequestWriter prepareRequest(io.micronaut.http.HttpRequest<I> request, URI requestURI) throws HttpPostRequestEncoder.ErrorDataEncoderException {
@@ -1984,7 +2018,37 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                         key.getPort(),
                         false,
                         false
-                ));
+                ) {
+                    @Override
+                    protected void addFinalHandler(ChannelPipeline pipeline) {
+                        // no-op, don't add the stream handler which is not supported
+                        // in the connection pooled scenario
+                    }
+                });
+                addReadTimeoutHandler(ch.pipeline());
+            }
+
+            @Override
+            public void channelAcquired(Channel ch) {
+                final ChannelPipeline pipeline = ch.pipeline();
+                addReadTimeoutHandler(pipeline);
+            }
+
+            private void addReadTimeoutHandler(ChannelPipeline pipeline) {
+                if (readTimeoutMillis != null) {
+                    // reset read timeout
+                    pipeline.addBefore(
+                            HANDLER_HTTP_CLIENT_CODEC,
+                            HANDLER_READ_TIMEOUT,
+                            new ReadTimeoutHandler(readTimeoutMillis, TimeUnit.MILLISECONDS));
+                }
+            }
+
+            @Override
+            public void channelReleased(Channel ch) {
+                if (readTimeoutMillis != null) {
+                    ch.pipeline().remove(HANDLER_READ_TIMEOUT);
+                }
             }
         };
     }
@@ -2033,15 +2097,6 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                 ch.config().setAutoRead(false);
             }
 
-            if (sslContext != null) {
-                SslHandler sslHandler = sslContext.newHandler(
-                        ch.alloc(),
-                        host,
-                        port
-                );
-                p.addFirst(HANDLER_SSL, sslHandler);
-            }
-
             Optional<SocketAddress> proxy = configuration.getProxyAddress();
             if (proxy.isPresent()) {
                 Type proxyType = configuration.getProxyType();
@@ -2049,21 +2104,28 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                 configureProxy(p, proxyType, proxyAddress);
             }
 
-            // read timeout settings are not applied to streamed requests.
-            // instead idle timeout settings are applied.
-            if (!stream) {
-                Optional<Duration> readTimeout = configuration.getReadTimeout();
-                readTimeout.ifPresent(duration -> {
-                    if (!duration.isNegative()) {
-                        p.addLast(HANDLER_READ_TIMEOUT, new ReadTimeoutHandler(duration.toMillis(), TimeUnit.MILLISECONDS));
-                    }
-                });
-            } else {
-                Optional<Duration> readIdleTime = configuration.getReadIdleTimeout();
-                if (readIdleTime.isPresent()) {
-                    Duration duration = readIdleTime.get();
-                    if (!duration.isNegative()) {
-                        p.addLast(HANDLER_IDLE_STATE, new IdleStateHandler(duration.toMillis(), duration.toMillis(), duration.toMillis(), TimeUnit.MILLISECONDS));
+            if (sslContext != null) {
+                SslHandler sslHandler = sslContext.newHandler(
+                        ch.alloc(),
+                        host,
+                        port
+                );
+                p.addLast(HANDLER_SSL, sslHandler);
+            }
+
+            // Pool connections require alternative timeout handling
+            if (poolMap == null) {
+                // read timeout settings are not applied to streamed requests.
+                // instead idle timeout settings are applied.
+                if (!stream && readTimeoutMillis != null) {
+                    p.addLast(HANDLER_READ_TIMEOUT, new ReadTimeoutHandler(readTimeoutMillis, TimeUnit.MILLISECONDS));
+                } else {
+                    Optional<Duration> readIdleTime = configuration.getReadIdleTimeout();
+                    if (readIdleTime.isPresent()) {
+                        Duration duration = readIdleTime.get();
+                        if (!duration.isNegative()) {
+                            p.addLast(HANDLER_IDLE_STATE, new IdleStateHandler(duration.toMillis(), duration.toMillis(), duration.toMillis(), TimeUnit.MILLISECONDS));
+                        }
                     }
                 }
             }
@@ -2110,7 +2172,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
 
                 });
 
-                p.addLast(HANDLER_MICRONAUT_SSE_CONTENT, new SimpleChannelInboundHandler<ByteBuf>() {
+                p.addLast(HANDLER_MICRONAUT_SSE_CONTENT, new SimpleChannelInboundHandler<ByteBuf>(false) {
 
                     @Override
                     public boolean acceptInboundMessage(Object msg) {
@@ -2119,7 +2181,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
 
                     @Override
                     protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
-                        ctx.fireChannelRead(new DefaultHttpContent(msg.retain()));
+                        ctx.fireChannelRead(new DefaultHttpContent(msg));
                     }
                 });
             }
@@ -2236,10 +2298,6 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
 
             if (channelPool == null) {
                 closeChannel(channel, emitter, channelFuture);
-            } else {
-                if (encoder != null) {
-                    encoder.cleanFiles();
-                }
             }
         }
 

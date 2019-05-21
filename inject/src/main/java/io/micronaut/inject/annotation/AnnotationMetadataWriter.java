@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.inject.annotation;
 
 import io.micronaut.core.annotation.AnnotationMetadata;
@@ -27,6 +26,7 @@ import io.micronaut.inject.writer.ClassGenerationException;
 import io.micronaut.inject.writer.ClassWriterOutputVisitor;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.GeneratorAdapter;
+import org.objectweb.asm.commons.Method;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -77,6 +77,14 @@ public class AnnotationMetadataWriter extends AbstractClassFileWriter {
             )
     );
 
+    private static final org.objectweb.asm.commons.Method METHOD_REGISTER_ANNOTATION_TYPE = org.objectweb.asm.commons.Method.getMethod(
+            ReflectionUtils.getRequiredInternalMethod(
+                    DefaultAnnotationMetadata.class,
+                    "registerAnnotationType",
+                    AnnotationClassValue.class
+            )
+    );
+
     private static final org.objectweb.asm.commons.Method CONSTRUCTOR_ANNOTATION_METADATA = org.objectweb.asm.commons.Method.getMethod(
             ReflectionUtils.getRequiredInternalConstructor(
                     DefaultAnnotationMetadata.class,
@@ -114,6 +122,13 @@ public class AnnotationMetadataWriter extends AbstractClassFileWriter {
             ReflectionUtils.getRequiredInternalConstructor(
                     AnnotationClassValue.class,
                     Class.class
+            )
+    );
+
+    private static final org.objectweb.asm.commons.Method CONSTRUCTOR_CLASS_VALUE_WITH_INSTANCE = org.objectweb.asm.commons.Method.getMethod(
+            ReflectionUtils.getRequiredInternalConstructor(
+                    AnnotationClassValue.class,
+                    Object.class
             )
     );
 
@@ -171,13 +186,6 @@ public class AnnotationMetadataWriter extends AbstractClassFileWriter {
             ClassWriter classWriter = generateClassBytes();
             outputStream.write(classWriter.toByteArray());
         }
-    }
-
-    /**
-     * Clears the annotation defaults.
-     */
-    public void clearDefaults() {
-        AnnotationMetadataSupport.CURRENT_DEFAULTS.clear();
     }
 
     /**
@@ -273,36 +281,52 @@ public class AnnotationMetadataWriter extends AbstractClassFileWriter {
         GeneratorAdapter constructor = startConstructor(classWriter);
         DefaultAnnotationMetadata annotationMetadata = this.annotationMetadata;
 
-        final HashMap<String, GeneratorAdapter> loadTypeMethods = new HashMap<>();
-        instantiateInternal(owningType, classWriter, constructor, annotationMetadata, false, loadTypeMethods);
+        final HashMap<String, GeneratorAdapter> loadTypeMethods = new HashMap<>(5);
+        instantiateInternal(
+                owningType,
+                classWriter,
+                constructor,
+                annotationMetadata,
+                false,
+                loadTypeMethods);
         constructor.visitInsn(RETURN);
         constructor.visitMaxs(1, 1);
         constructor.visitEnd();
 
-        final Map<String, Map<String, Object>> annotationDefaultValues = AnnotationMetadataSupport.CURRENT_DEFAULTS;
-        if (writeAnnotationDefaults && !annotationDefaultValues.isEmpty()) {
+        final Map<String, Map<CharSequence, Object>> annotationDefaultValues = annotationMetadata.annotationDefaultValues;
+        if (writeAnnotationDefaults && CollectionUtils.isNotEmpty(annotationDefaultValues)) {
 
             MethodVisitor si = classWriter.visitMethod(ACC_STATIC, "<clinit>", "()V", null, null);
             GeneratorAdapter staticInit = new GeneratorAdapter(si, ACC_STATIC, "<clinit>", "()V");
 
-            for (Map.Entry<String, Map<String, Object>> entry : annotationDefaultValues.entrySet()) {
-                final Map<String, Object> annotationValues = entry.getValue();
+            for (Map.Entry<String, Map<CharSequence, Object>> entry : annotationDefaultValues.entrySet()) {
+                final Map<CharSequence, Object> annotationValues = entry.getValue();
+                final boolean typeOnly = CollectionUtils.isEmpty(annotationValues);
+                String annotationName = entry.getKey();
 
-                if (CollectionUtils.isNotEmpty(annotationValues)) {
-                    String annotationName = entry.getKey();
-                    Label falseCondition = new Label();
+                // skip already registered
+                if (typeOnly && AnnotationMetadataSupport.getRegisteredAnnotationType(annotationName).isPresent()) {
+                    continue;
+                }
 
-                    staticInit.push(annotationName);
-                    staticInit.invokeStatic(TYPE_DEFAULT_ANNOTATION_METADATA, METHOD_ARE_DEFAULTS_REGISTERED);
-                    staticInit.push(true);
-                    staticInit.ifCmp(Type.BOOLEAN_TYPE, GeneratorAdapter.EQ, falseCondition);
-                    staticInit.visitLabel(new Label());
 
-                    invokeLoadClassValueMethod(owningType, classWriter, staticInit, loadTypeMethods, new AnnotationClassValue(annotationName));
+                Label falseCondition = new Label();
+
+                staticInit.push(annotationName);
+                staticInit.invokeStatic(TYPE_DEFAULT_ANNOTATION_METADATA, METHOD_ARE_DEFAULTS_REGISTERED);
+                staticInit.push(true);
+                staticInit.ifCmp(Type.BOOLEAN_TYPE, GeneratorAdapter.EQ, falseCondition);
+                staticInit.visitLabel(new Label());
+
+                invokeLoadClassValueMethod(owningType, classWriter, staticInit, loadTypeMethods, new AnnotationClassValue(annotationName));
+
+                if (!typeOnly) {
                     pushAnnotationAttributes(owningType, classWriter, staticInit, annotationValues, loadTypeMethods);
                     staticInit.invokeStatic(TYPE_DEFAULT_ANNOTATION_METADATA, METHOD_REGISTER_ANNOTATION_DEFAULTS);
-                    staticInit.visitLabel(falseCondition);
+                } else {
+                    staticInit.invokeStatic(TYPE_DEFAULT_ANNOTATION_METADATA, METHOD_REGISTER_ANNOTATION_TYPE);
                 }
+                staticInit.visitLabel(falseCondition);
             }
             staticInit.visitInsn(RETURN);
 
@@ -399,7 +423,16 @@ public class AnnotationMetadataWriter extends AbstractClassFileWriter {
             methodVisitor.push(value.toString());
         } else if (value instanceof AnnotationClassValue) {
             AnnotationClassValue acv = (AnnotationClassValue) value;
-            invokeLoadClassValueMethod(declaringType, declaringClassWriter, methodVisitor, loadTypeMethods, acv);
+            if (acv.isInstantiated()) {
+                methodVisitor.visitTypeInsn(NEW, TYPE_ANNOTATION_CLASS_VALUE.getInternalName());
+                methodVisitor.visitInsn(DUP);
+                methodVisitor.visitTypeInsn(NEW, getInternalName(acv.getName()));
+                methodVisitor.visitInsn(DUP);
+                methodVisitor.invokeConstructor(getTypeReference(acv.getName()), new Method(CONSTRUCTOR_NAME, getConstructorDescriptor()));
+                methodVisitor.invokeConstructor(TYPE_ANNOTATION_CLASS_VALUE, CONSTRUCTOR_CLASS_VALUE_WITH_INSTANCE);
+            } else {
+                invokeLoadClassValueMethod(declaringType, declaringClassWriter, methodVisitor, loadTypeMethods, acv);
+            }
         } else if (value instanceof Enum) {
             Enum enumObject = (Enum) value;
             Class declaringClass = enumObject.getDeclaringClass();
@@ -415,8 +448,8 @@ public class AnnotationMetadataWriter extends AbstractClassFileWriter {
                         pushValue(declaringType, declaringClassWriter, methodVisitor, v, loadTypeMethods)
                 );
             }
-        } else if (value instanceof List) {
-            List array = (List) value;
+        } else if (value instanceof Collection) {
+            List array = Arrays.asList(((Collection) value).toArray());
             int len = array.size();
             if (len == 0) {
                 pushNewArray(methodVisitor, Object.class, len);
@@ -515,7 +548,6 @@ public class AnnotationMetadataWriter extends AbstractClassFileWriter {
             loadTypeGenerator.push(typeName);
             loadTypeGenerator.invokeConstructor(TYPE_ANNOTATION_CLASS_VALUE, CONSTRUCTOR_CLASS_VALUE);
             loadTypeGenerator.returnValue();
-
             return loadTypeGenerator;
         });
 

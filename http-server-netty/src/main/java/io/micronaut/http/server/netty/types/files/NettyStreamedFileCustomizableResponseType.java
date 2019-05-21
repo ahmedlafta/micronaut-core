@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.http.server.netty.types.files;
 
 import io.micronaut.http.HttpRequest;
@@ -21,12 +20,9 @@ import io.micronaut.http.MediaType;
 import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.netty.NettyMutableHttpResponse;
 import io.micronaut.http.server.netty.types.NettyFileCustomizableResponseType;
-import io.micronaut.http.server.types.files.FileCustomizableResponseType;
 import io.micronaut.http.server.types.files.StreamedFile;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.http.DefaultHttpResponse;
-import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpChunkedInput;
+import io.netty.handler.codec.http.*;
 import io.netty.handler.stream.ChunkedStream;
 
 import java.io.InputStream;
@@ -81,7 +77,9 @@ public class NettyStreamedFileCustomizableResponseType extends StreamedFile impl
     public void process(MutableHttpResponse response) {
         long length = getLength();
         if (length > -1) {
-            response.header(io.micronaut.http.HttpHeaders.CONTENT_LENGTH, String.valueOf(length));
+            response.header(HttpHeaderNames.CONTENT_LENGTH, String.valueOf(length));
+        } else {
+            response.header(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED);
         }
         delegate.ifPresent((type) -> type.process(response));
     }

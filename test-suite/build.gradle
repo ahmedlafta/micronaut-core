@@ -12,31 +12,39 @@ ext {
 }
 
 dependencies {
+    compileOnly project(":inject-java")
+    compile project(":inject")
+
     testCompile project(":http-server-netty")
     testCompile project(":http-client")
-    testCompile project(":configurations:hibernate-validator")
-    testCompile project(":configurations:postgres-reactive")
+    testCompile project(":validation")
     testCompile project(":inject-groovy")
     testCompile project(":inject-java")
+    testCompile project(":inject-java-test")
     testCompile project(":tracing")
     testCompile project(":management")
+    testCompile project(":runtime")
+    testCompile project(":inject")
+    testCompile dependencyVersion("jcache")
+    testCompile dependencyModuleVersion("micronaut.test", "micronaut-test-junit5")
 
     testCompile dependencyVersion("jaeger")
     testCompile dependencyModuleVersion("groovy", "groovy-json")
     // tag::testcontainers-dependencies[]
     testCompile "org.testcontainers:spock:1.10.1"
-    testCompile "org.testcontainers:postgresql:1.10.1"
     // end::testcontainers-dependencies[]
 
     testRuntime dependencyVersion("tomcatJdbc")
     testRuntime dependencyVersion("h2")
+    testRuntime "org.junit.vintage:junit-vintage-engine:$junit5Version"
     testRuntime "ch.qos.logback:logback-classic:1.2.3"
 }
 
 apply from: "${rootProject.projectDir}/gradle/geb.gradle"
 apply from: "${rootProject.projectDir}/gradle/webdriverbinaries.gradle"
-
 tasks.withType(Test) {
+    useJUnitPlatform()
+
     jvmArgs('-Dio.netty.leakDetection.level=paranoid')
 /*    testLogging {
         showStandardStreams = true
@@ -50,3 +58,6 @@ tasks.withType(Test) {
         System.out.flush()
     }*/
 }
+
+//compileTestJava.options.fork = true
+//compileTestJava.options.forkOptions.jvmArgs = ['-Xdebug', '-Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5005']

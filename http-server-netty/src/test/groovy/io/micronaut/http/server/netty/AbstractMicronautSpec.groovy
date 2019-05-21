@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,12 +31,14 @@ abstract class AbstractMicronautSpec extends Specification {
     static final SPEC_NAME_PROPERTY = 'spec.name'
 
     @Shared File uploadDir = File.createTempDir()
-    @Shared @AutoCleanup EmbeddedServer embeddedServer = ApplicationContext.run(EmbeddedServer,
+    @Shared EmbeddedServer embeddedServer = ApplicationContext.run(EmbeddedServer,
             getConfiguration() << [(SPEC_NAME_PROPERTY):getClass().simpleName]
     )
     @Shared int serverPort = embeddedServer.getPort()
     @Shared URL server = embeddedServer.getURL()
-    @Shared @AutoCleanup RxHttpClient rxClient = embeddedServer.applicationContext.createBean(RxHttpClient, server)
+    @Shared @AutoCleanup ApplicationContext applicationContext = embeddedServer.applicationContext
+    @Shared @AutoCleanup RxHttpClient rxClient = applicationContext.createBean(RxHttpClient, server)
+
 
     Collection<String> configurationNames() {
         ['io.micronaut.configuration.jackson','io.micronaut.web.router']
@@ -49,4 +51,5 @@ abstract class AbstractMicronautSpec extends Specification {
     void cleanupSpec()  {
         uploadDir.delete()
     }
+
 }

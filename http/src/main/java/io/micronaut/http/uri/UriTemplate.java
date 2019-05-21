@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.http.uri;
 
 import io.micronaut.core.beans.BeanMap;
@@ -29,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -204,46 +204,7 @@ public class UriTemplate implements Comparable<UriTemplate> {
 
     @Override
     public String toString() {
-        StringBuilder builder = new StringBuilder();
-        UriTemplateParser.VariablePathSegment previousVariable = null;
-        for (PathSegment segment : segments) {
-            boolean isVar = segment instanceof UriTemplateParser.VariablePathSegment;
-            if (previousVariable != null && isVar) {
-                UriTemplateParser.VariablePathSegment varSeg = (UriTemplateParser.VariablePathSegment) segment;
-                if (varSeg.operator == previousVariable.operator) {
-                    builder.append(varSeg.delimiter);
-                } else {
-                    builder.append(VAR_END);
-                    builder.append(VAR_START);
-                    char op = varSeg.operator;
-                    if (OPERATOR_NONE != op) {
-                        builder.append(op);
-                    }
-                }
-                builder.append(segment.toString());
-                previousVariable = varSeg;
-            } else {
-                if (isVar) {
-                    previousVariable = (UriTemplateParser.VariablePathSegment) segment;
-                    builder.append(VAR_START);
-                    char op = previousVariable.operator;
-                    if (OPERATOR_NONE != op) {
-                        builder.append(op);
-                    }
-                    builder.append(segment.toString());
-                } else {
-                    if (previousVariable != null) {
-                        builder.append(VAR_END);
-                        previousVariable = null;
-                    }
-                    builder.append(segment.toString());
-                }
-            }
-        }
-        if (previousVariable != null) {
-            builder.append(VAR_END);
-        }
-        return builder.toString();
+        return toString(pathSegment -> true);
     }
 
     @Override
@@ -440,6 +401,59 @@ public class UriTemplate implements Comparable<UriTemplate> {
         return new UriTemplateParser(templateString);
     }
 
+    /**
+     * Returns the template as a string filtering the segments
+     * with the provided filter.
+     *
+     * @param filter The filter to test segments
+     * @return The template as a string
+     */
+    protected String toString(Predicate<PathSegment> filter) {
+        StringBuilder builder = new StringBuilder();
+        UriTemplateParser.VariablePathSegment previousVariable = null;
+        for (PathSegment segment : segments) {
+            if (!filter.test(segment)) {
+                continue;
+            }
+            boolean isVar = segment instanceof UriTemplateParser.VariablePathSegment;
+            if (previousVariable != null && isVar) {
+                UriTemplateParser.VariablePathSegment varSeg = (UriTemplateParser.VariablePathSegment) segment;
+                if (varSeg.operator == previousVariable.operator) {
+                    builder.append(varSeg.delimiter);
+                } else {
+                    builder.append(VAR_END);
+                    builder.append(VAR_START);
+                    char op = varSeg.operator;
+                    if (OPERATOR_NONE != op) {
+                        builder.append(op);
+                    }
+                }
+                builder.append(segment.toString());
+                previousVariable = varSeg;
+            } else {
+                if (isVar) {
+                    previousVariable = (UriTemplateParser.VariablePathSegment) segment;
+                    builder.append(VAR_START);
+                    char op = previousVariable.operator;
+                    if (OPERATOR_NONE != op) {
+                        builder.append(op);
+                    }
+                    builder.append(segment.toString());
+                } else {
+                    if (previousVariable != null) {
+                        builder.append(VAR_END);
+                        previousVariable = null;
+                    }
+                    builder.append(segment.toString());
+                }
+            }
+        }
+        if (previousVariable != null) {
+            builder.append(VAR_END);
+        }
+        return builder.toString();
+    }
+
     private boolean shouldPrependSlash(String templateString, int len) {
         String parentString = this.templateString;
         int parentLen = parentString.length();
@@ -476,6 +490,15 @@ public class UriTemplate implements Comparable<UriTemplate> {
          */
         default boolean isQuerySegment() {
             return false;
+        }
+
+        /**
+         * If this path segment represents a variable returns the underlying variable name.
+         *
+         * @return The variable name if present
+         */
+        default Optional<String> getVariable() {
+            return Optional.empty();
         }
 
         /**
@@ -856,6 +879,11 @@ public class UriTemplate implements Comparable<UriTemplate> {
                 this.modifierStr = modifierStr;
                 this.previousDelimiter = previousDelimiter;
                 this.repeatPrefix = repeatPrefix;
+            }
+
+            @Override
+            public Optional<String> getVariable() {
+                return Optional.of(variable);
             }
 
             public char getOperator() {

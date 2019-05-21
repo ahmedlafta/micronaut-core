@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package io.micronaut.views;
 
 import io.micronaut.core.beans.BeanMap;
 import io.micronaut.core.io.Writable;
+import io.micronaut.http.HttpRequest;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -55,6 +56,17 @@ public interface ViewsRenderer {
 
     /**
      * @param viewName view name to be render
+     * @param data     response body to render it with a view
+     * @param request  HTTP request
+     * @return A writable where the view will be written to.
+     */
+    default @Nonnull Writable render(@Nonnull String viewName, @Nullable Object data,
+            @Nonnull HttpRequest<?> request) {
+        return render(viewName, data);
+    }
+
+    /**
+     * @param viewName view name to be render
      * @return true if a template can be found for the supplied view name.
      */
     boolean exists(@Nonnull String viewName);
@@ -79,19 +91,13 @@ public interface ViewsRenderer {
      * separators that starts and ends with a "\".
      *
      * @param path The path to normalizeFile
+     * @deprecated Use {@link ViewUtils#normalizeFolder(String)} instead
      * @return The normalized path
      */
     @Nonnull
+    @Deprecated
     default String normalizeFolder(@Nullable String path) {
-        if (path == null) {
-            path = "";
-        } else {
-            path = normalizeFile(path, null);
-        }
-        if (!path.endsWith("/")) {
-            path = path + "/";
-        }
-        return path;
+        return ViewUtils.normalizeFolder(path);
     }
 
     /**
@@ -103,21 +109,12 @@ public interface ViewsRenderer {
      *
      * @param path The path to normalizeFile
      * @param extension The file extension
+     * @deprecated Use {@link ViewUtils#normalizeFile(String, String)} instead
      * @return The normalized path
      */
     @Nonnull
+    @Deprecated
     default String normalizeFile(@Nonnull String path, String extension) {
-        path = path.replace("\\", "/");
-        if (path.startsWith("/")) {
-            path = path.substring(1);
-        }
-        if (extension != null && !extension.startsWith(".")) {
-            extension = "." + extension;
-            if (path.endsWith(extension)) {
-                int idx = path.indexOf(extension);
-                path = path.substring(0, idx);
-            }
-        }
-        return path;
+        return ViewUtils.normalizeFile(path, extension);
     }
 }

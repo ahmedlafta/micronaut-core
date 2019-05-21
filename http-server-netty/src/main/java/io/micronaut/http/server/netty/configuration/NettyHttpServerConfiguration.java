@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.http.server.netty.configuration;
 
 import io.micronaut.context.annotation.ConfigurationProperties;
@@ -27,7 +26,6 @@ import javax.inject.Inject;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 
 /**
  * Allows configuring Netty within {@link io.micronaut.http.server.netty.NettyHttpServer}.
@@ -37,6 +35,12 @@ import java.util.OptionalInt;
  */
 @ConfigurationProperties("netty")
 public class NettyHttpServerConfiguration extends HttpServerConfiguration {
+
+    /**
+     * The default use netty's native transport flag.
+     */
+    @SuppressWarnings("WeakerAccess")
+    public static final boolean DEFAULT_USE_NATIVE_TRANSPORT = false;
 
     /**
      * The default max initial line length.
@@ -92,6 +96,7 @@ public class NettyHttpServerConfiguration extends HttpServerConfiguration {
     private int initialBufferSize = DEFAULT_INITIALBUFFERSIZE;
     private LogLevel logLevel;
     private int compressionThreshold = DEFAULT_COMPRESSIONTHRESHOLD;
+    private boolean useNativeTransport = DEFAULT_USE_NATIVE_TRANSPORT;
 
     /**
      * Default empty constructor.
@@ -150,6 +155,15 @@ public class NettyHttpServerConfiguration extends HttpServerConfiguration {
      */
     public boolean isChunkedSupported() {
         return chunkedSupported;
+    }
+
+    /**
+     * Whether to use netty's native transport (epoll or kqueue) if available.
+     *
+     * @return To use netty's native transport (epoll or kqueue) if available.
+     */
+    public boolean isUseNativeTransport() {
+        return useNativeTransport;
     }
 
     /**
@@ -275,6 +289,14 @@ public class NettyHttpServerConfiguration extends HttpServerConfiguration {
     }
 
     /**
+     * Sets whether to use netty's native transport (epoll or kqueue) if available . Default value ({@value #DEFAULT_USE_NATIVE_TRANSPORT}).
+     * @param useNativeTransport True if netty's native transport should be use if available.
+     */
+    public void setUseNativeTransport(boolean useNativeTransport) {
+        this.useNativeTransport = useNativeTransport;
+    }
+
+    /**
      * Sets whether to validate incoming headers. Default value ({@value #DEFAULT_VALIDATEHEADERS}).
      * @param validateHeaders True if headers should be validated.
      */
@@ -362,11 +384,11 @@ public class NettyHttpServerConfiguration extends HttpServerConfiguration {
         /**
          * @return The I/O ratio to use
          */
-        public OptionalInt getIoRatio() {
+        public Optional<Integer> getIoRatio() {
             if (ioRatio != null) {
-                return OptionalInt.of(ioRatio);
+                return Optional.of(ioRatio);
             }
-            return OptionalInt.empty();
+            return Optional.empty();
         }
 
         /**

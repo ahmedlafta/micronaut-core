@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,6 +72,28 @@ class Test {
         metadata != null
         metadata.getValue("test.MyAnn","doubleArray", Double[].class).get() == [1.1d] as Double[]
         metadata.getValue("test.MyAnn","doubleArray", double[].class).get() == [1.1d] as double[]
+    }
+
+    void "test read annotation on alias with primitive type"() {
+        given:
+        AnnotationMetadata toWrite = buildTypeAnnotationMetadata("test.Test",'''\
+package test;
+
+import io.micronaut.inject.annotation.MultipleAlias;
+
+@MultipleAlias(primitiveAlias=10, bool=true)
+class Test {
+}
+''')
+        when:
+        def className = "test"
+        AnnotationMetadata metadata = writeAndLoadMetadata(className, toWrite)
+
+        then:
+        metadata != null
+        metadata.hasAnnotation(MultipleAlias)
+        metadata.getValue(Nested, "num", Integer).get() == 10
+        metadata.getValue(Nested, "bool", Boolean).get()
     }
 
     void "test read annotation with annotation value"() {

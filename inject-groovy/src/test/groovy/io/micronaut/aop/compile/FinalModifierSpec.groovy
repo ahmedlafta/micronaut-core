@@ -1,3 +1,18 @@
+/*
+ * Copyright 2017-2019 original authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.micronaut.aop.compile
 
 import io.micronaut.AbstractBeanDefinitionSpec
@@ -58,7 +73,7 @@ class FinalModifierMyBean2 {
 ''')
         then:
         def e = thrown(RuntimeException)
-        e.message.contains 'Public method inherits AOP advice but is declared final. Either make the method non-public or apply AOP advice only to public methods declared on the class.'
+        e.message.contains 'Public method inherits AOP advice but is declared final. Change the method to be non-final in order for AOP advice to be applied.'
     }
 
     void "test final modifier on method with explicit AOP advice doesn't compile"() {

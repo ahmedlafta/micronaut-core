@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.retry.intercept;
 
+import io.micronaut.core.annotation.AnnotationClassValue;
 import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.annotation.AnnotationValue;
 import io.micronaut.core.type.Argument;
@@ -24,8 +24,7 @@ import io.micronaut.retry.RetryStateBuilder;
 import io.micronaut.retry.annotation.Retryable;
 
 import java.time.Duration;
-import java.util.Collections;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Builds a {@link RetryState} from {@link AnnotationMetadata}.
@@ -75,8 +74,15 @@ class AnnotationRetryStateBuilder implements RetryStateBuilder {
 
     @SuppressWarnings("unchecked")
     private Set<Class<? extends Throwable>> resolveIncludes(AnnotationValue<Retryable> retry, String includes) {
-        return retry
-            .get(includes, Argument.of(Set.class, Argument.of(Class.class, Throwable.class)))
-            .orElse(Collections.emptySet());
+        Set<Class<? extends Throwable>> classes = new HashSet<>();
+        Optional<AnnotationClassValue[]> value = retry.get(includes, Argument.of(AnnotationClassValue[].class));
+        if (value.isPresent()) {
+            for (AnnotationClassValue classValue: value.get()) {
+                classValue.getType().ifPresent(clazz -> {
+                    classes.add((Class) clazz);
+                });
+            }
+        }
+        return classes;
     }
 }

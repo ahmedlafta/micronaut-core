@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.http.server.netty;
 
 import io.micronaut.context.BeanLocator;
+import io.micronaut.context.event.ApplicationEventPublisher;
+import io.micronaut.context.exceptions.BeanInstantiationException;
 import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.annotation.Internal;
 import io.micronaut.core.async.publisher.Publishers;
@@ -41,9 +42,11 @@ import io.micronaut.http.annotation.Produces;
 import io.micronaut.http.annotation.Status;
 import io.micronaut.http.codec.MediaTypeCodec;
 import io.micronaut.http.codec.MediaTypeCodecRegistry;
+import io.micronaut.http.context.event.HttpRequestTerminatedEvent;
 import io.micronaut.http.exceptions.HttpStatusException;
 import io.micronaut.http.filter.HttpFilter;
 import io.micronaut.http.filter.HttpServerFilter;
+import io.micronaut.http.filter.OncePerRequestHttpServerFilter;
 import io.micronaut.http.filter.ServerFilterChain;
 import io.micronaut.http.hateoas.JsonError;
 import io.micronaut.http.hateoas.Link;
@@ -65,6 +68,7 @@ import io.micronaut.http.server.netty.types.NettyCustomizableResponseTypeHandler
 import io.micronaut.http.server.netty.types.files.NettyStreamedFileCustomizableResponseType;
 import io.micronaut.http.server.netty.types.files.NettySystemFileCustomizableResponseType;
 import io.micronaut.http.server.types.files.FileCustomizableResponseType;
+import io.micronaut.inject.BeanType;
 import io.micronaut.inject.MethodExecutionHandle;
 import io.micronaut.inject.qualifiers.Qualifiers;
 import io.micronaut.runtime.http.codec.TextPlainCodec;
@@ -80,12 +84,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.DecoderResult;
 import io.netty.handler.codec.TooLongFrameException;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.multipart.Attribute;
 import io.netty.handler.codec.http.multipart.FileUpload;
 import io.netty.handler.codec.http.multipart.HttpData;
@@ -130,6 +134,7 @@ import java.util.stream.Collectors;
  * @since 1.0
  */
 @Internal
+@Sharable
 class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.http.HttpRequest<?>> {
 
     private static final Logger LOG = LoggerFactory.getLogger(RoutingInBoundHandler.class);
@@ -187,7 +192,25 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
         }
         NettyHttpRequest request = NettyHttpRequest.remove(ctx);
         if (request != null) {
-            request.release();
+            try {
+                request.release();
+            } finally {
+                if (beanLocator instanceof ApplicationEventPublisher) {
+                    ctx.executor().execute(() -> {
+                        try {
+                            ((ApplicationEventPublisher) beanLocator).publishEvent(
+                                    new HttpRequestTerminatedEvent(
+                                            request
+                                    )
+                            );
+                        } catch (Exception e) {
+                            if (LOG.isErrorEnabled()) {
+                                LOG.error("Error publishing request terminated event: " + e.getMessage(), e);
+                            }
+                        }
+                    });
+                }
+            }
         }
     }
 
@@ -210,7 +233,6 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         NettyHttpRequest nettyHttpRequest = NettyHttpRequest.remove(ctx);
-        RouteMatch<?> errorRoute = null;
         if (nettyHttpRequest == null) {
             if (LOG.isErrorEnabled()) {
                 LOG.error("Micronaut Server Error - No request state present. Cause: " + cause.getMessage(), cause);
@@ -219,6 +241,14 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
             return;
         }
 
+        exceptionCaughtInternal(ctx, cause, nettyHttpRequest, true);
+    }
+
+    private void exceptionCaughtInternal(ChannelHandlerContext ctx,
+                                         Throwable cause,
+                                         NettyHttpRequest nettyHttpRequest,
+                                         boolean nettyException) {
+        RouteMatch<?> errorRoute = null;
         // find the origination of of the route
         RouteMatch<?> originalRoute = nettyHttpRequest.getMatchedRoute();
         Class declaringType = null;
@@ -246,6 +276,15 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                 // handle error with a method that is global with bad request
                 errorRoute = router.route(statusException.getStatus()).orElse(null);
             }
+        } else if (cause instanceof BeanInstantiationException && declaringType != null) {
+            // If the controller could not be instantiated, don't look for a local error route
+            Optional<Class> rootBeanType = ((BeanInstantiationException) cause).getRootBeanType().map(BeanType::getBeanType);
+            if (rootBeanType.isPresent() && declaringType == rootBeanType.get()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Failed to instantiate [{}]. Skipping lookup of a local error route", declaringType.getName());
+                }
+                declaringType = null;
+            }
         }
 
         // any another other exception may arise. handle these with non global exception marked method or a global exception marked method.
@@ -269,7 +308,7 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                 final MethodBasedRouteMatch<?, ?> methodBasedRoute = (MethodBasedRouteMatch) errorRoute;
                 Flowable resultFlowable = Flowable.defer(() -> {
                       Object result = methodBasedRoute.execute();
-                      io.micronaut.http.MutableHttpResponse<?> response = errorResultToResponse(result);
+                      MutableHttpResponse<?> response = errorResultToResponse(result);
                       response.setAttribute(HttpAttributes.ROUTE_MATCH, methodBasedRoute);
                       return Flowable.just(response);
                 });
@@ -285,7 +324,8 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                 Flowable<? extends MutableHttpResponse<?>> filteredPublisher = filterPublisher(
                         requestReference,
                         routePublisher,
-                        ctx.channel().eventLoop());
+                        ctx.channel().eventLoop(),
+                        nettyException);
 
                 subscribeToResponsePublisher(
                         ctx,
@@ -307,7 +347,7 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
         } else {
 
             Optional<ExceptionHandler> exceptionHandler = beanLocator
-                    .findBean(ExceptionHandler.class, Qualifiers.byTypeArguments(cause.getClass(), Object.class));
+                    .findBean(ExceptionHandler.class, Qualifiers.byTypeArgumentsClosest(cause.getClass(), Object.class));
 
             if (exceptionHandler.isPresent()) {
                 ExceptionHandler handler = exceptionHandler.get();
@@ -315,7 +355,7 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                 try {
                     Flowable resultFlowable = Flowable.defer(() -> {
                         Object result = handler.handle(nettyHttpRequest, cause);
-                        io.micronaut.http.MutableHttpResponse<?> response = errorResultToResponse(result);
+                        MutableHttpResponse<?> response = errorResultToResponse(result);
                         return Flowable.just(response);
                     });
 
@@ -330,7 +370,8 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                     Flowable<? extends MutableHttpResponse<?>> filteredPublisher = filterPublisher(
                             requestReference,
                             routePublisher,
-                            ctx.channel().eventLoop());
+                            ctx.channel().eventLoop(),
+                            nettyException);
 
                     subscribeToResponsePublisher(
                             ctx,
@@ -349,7 +390,33 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                     writeDefaultErrorResponse(ctx, nettyHttpRequest, e);
                 }
             } else {
-                writeDefaultErrorResponse(ctx, nettyHttpRequest, cause);
+                logException(cause);
+
+                Flowable resultFlowable = Flowable.defer(() -> {
+                    return Flowable.just(HttpResponse.serverError()
+                            .body(new JsonError("Internal Server Error: " + cause.getMessage())));
+                });
+
+                AtomicReference<HttpRequest<?>> requestReference = new AtomicReference<>(nettyHttpRequest);
+                Flowable<MutableHttpResponse<?>> routePublisher = buildRoutePublisher(
+                        null,
+                        HttpResponse.class,
+                        AnnotationMetadata.EMPTY_METADATA,
+                        requestReference,
+                        resultFlowable);
+
+                Flowable<? extends MutableHttpResponse<?>> filteredPublisher = filterPublisher(
+                        requestReference,
+                        routePublisher,
+                        ctx.channel().eventLoop(),
+                        nettyException);
+
+                subscribeToResponsePublisher(
+                        ctx,
+                        MediaType.APPLICATION_JSON_TYPE,
+                        requestReference,
+                        filteredPublisher
+                );
             }
         }
     }
@@ -512,7 +579,8 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
             Flowable<? extends MutableHttpResponse<?>> responsePublisher = filterPublisher(
                     requestReference,
                     Flowable.just(defaultResponse),
-                    ctx.channel().eventLoop()
+                    ctx.channel().eventLoop(),
+                    false
             );
             subscribeToResponsePublisher(
                     ctx,
@@ -551,7 +619,8 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
         Flowable<? extends MutableHttpResponse<?>> responsePublisher = filterPublisher(
                 requestReference,
                 Flowable.just(res),
-                ctx.channel().eventLoop()
+                ctx.channel().eventLoop(),
+                false
         );
         subscribeToResponsePublisher(
                 ctx,
@@ -628,10 +697,13 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                 || ByteBuf.class.isAssignableFrom(javaType));
     }
 
-    private Subscriber<Object> buildSubscriber(NettyHttpRequest request,
+    private Subscriber<Object> buildSubscriber(NettyHttpRequest<?> request,
                                                ChannelHandlerContext context,
                                                RouteMatch<?> finalRoute) {
         return new CompletionAwareSubscriber<Object>() {
+            Boolean alwaysAddContent = request.getContentType()
+                    .map(type -> type.equals(MediaType.APPLICATION_FORM_URLENCODED_TYPE))
+                    .orElse(false);
             RouteMatch<?> routeMatch = finalRoute;
             AtomicBoolean executed = new AtomicBoolean(false);
             AtomicLong pressureRequested = new AtomicLong(0);
@@ -814,6 +886,10 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                                 }
                             }
 
+                            if (alwaysAddContent) {
+                                request.addContent(data);
+                            }
+
                             if (!executed || !chunkedProcessing) {
                                 s.request(1);
                             }
@@ -827,7 +903,7 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
                         s.request(1);
                     }
                 } else {
-                    request.setBody(message);
+                    ((NettyHttpRequest) request).setBody(message);
                     s.request(1);
                 }
             }
@@ -960,7 +1036,8 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
             Flowable<? extends MutableHttpResponse<?>> filteredPublisher = filterPublisher(
                     requestReference,
                     routePublisher,
-                    executor
+                    executor,
+                    false
             );
 
             boolean isStreaming = isReactiveReturnType && !isSingle;
@@ -1151,7 +1228,7 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
 
             @Override
             protected void doOnError(Throwable t) {
-                super.doOnError(t);
+                exceptionCaughtInternal(context, t, (NettyHttpRequest) requestReference.get(), false);
             }
         });
     }
@@ -1174,16 +1251,15 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
             }
         }
 
-        // default to Transfer-Encoding: chunked if Content-Length not set or not already set
-        if (!nettyHeaders.contains(HttpHeaderNames.CONTENT_LENGTH) && !nettyHeaders.contains(HttpHeaderNames.TRANSFER_ENCODING)) {
-            nettyHeaders.add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED);
-        }
-
         final Object body = message.body();
         if (body instanceof NettyCustomizableResponseTypeHandlerInvoker) {
             NettyCustomizableResponseTypeHandlerInvoker handler = (NettyCustomizableResponseTypeHandlerInvoker) body;
             handler.invoke(httpRequest, nettyHttpResponse, context);
         } else {
+            // default to Transfer-Encoding: chunked if Content-Length not set or not already set
+            if (!nettyHeaders.contains(HttpHeaderNames.CONTENT_LENGTH) && !nettyHeaders.contains(HttpHeaderNames.TRANSFER_ENCODING)) {
+                nettyHeaders.add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED);
+            }
             // close handled by HttpServerKeepAliveHandler
             context.writeAndFlush(nettyResponse);
             context.read();
@@ -1365,9 +1441,14 @@ class RoutingInBoundHandler extends SimpleChannelInboundHandler<io.micronaut.htt
 
     private Flowable<? extends MutableHttpResponse<?>> filterPublisher(
             AtomicReference<HttpRequest<?>> requestReference,
-            Publisher<MutableHttpResponse<?>> routePublisher, ExecutorService executor) {
+            Publisher<MutableHttpResponse<?>> routePublisher,
+            ExecutorService executor,
+            boolean skipOncePerRequest) {
         Publisher<? extends io.micronaut.http.MutableHttpResponse<?>> finalPublisher;
         List<HttpFilter> filters = new ArrayList<>(router.findFilters(requestReference.get()));
+        if (skipOncePerRequest) {
+            filters.removeIf(filter -> filter instanceof OncePerRequestHttpServerFilter);
+        }
         if (!filters.isEmpty()) {
             // make the action executor the last filter in the chain
             filters.add((HttpServerFilter) (req, chain) -> routePublisher);

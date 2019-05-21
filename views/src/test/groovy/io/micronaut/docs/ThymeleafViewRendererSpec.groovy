@@ -1,3 +1,18 @@
+/*
+ * Copyright 2017-2019 original authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.micronaut.docs
 
 import io.micronaut.context.ApplicationContext
@@ -182,5 +197,21 @@ class ThymeleafViewRendererSpec extends Specification {
         e.status == HttpStatus.NOT_FOUND
         e.response.getBody(String).get().contains("<h1>I'm sorry, <span>sdelamo</span>! You've reached a dead end. Status: <span></span>. Exception: <span>global</span></h1>")
         
+    }
+
+    def "invoking /views/relative-link renders thymeleaf template with relative link"() {
+        when:
+            HttpResponse<String> rsp = client.toBlocking().exchange('/views/relative-link', String)
+
+        then:
+            noExceptionThrown()
+            rsp.status() == HttpStatus.OK
+
+        when:
+            String body = rsp.body()
+
+        then:
+            body
+            rsp.body().contains("<a href=\"/to-resolve\">Relative Link</a>")
     }
 }

@@ -12,7 +12,7 @@ dependencies {
     compileOnly "com.github.jknack:handlebars:${handlebarsVersion}"
     compileOnly "org.thymeleaf:thymeleaf:$thymeleafVersion"
     compileOnly "org.freemarker:freemarker:$freemarkerVersion"
-    compileOnly project(":security")
+    compileOnly dependencyModuleVersion("micronaut.security", "micronaut-security")
 
     compile project(":runtime")
     compile project(":http")
@@ -20,7 +20,10 @@ dependencies {
 
     testCompile project(":http-client")
     testCompile project(":inject-groovy")
+    testCompile project(":inject-java")
     testCompile project(":http-server-netty")
+    testCompile dependencyModuleVersion("micronaut.security", "micronaut-security")
+
     testCompile "org.yaml:snakeyaml:$snakeYamlVersion"
     testRuntime "org.apache.velocity:velocity-engine-core:$velocityEngine"
     testRuntime "com.github.jknack:handlebars:${handlebarsVersion}"

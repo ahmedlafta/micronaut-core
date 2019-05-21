@@ -1,57 +1,15 @@
 Micronaut {version} includes the following changes:
 
-=== File Watch and Server Restart
+=== Native Bean Validation Support
 
-A new <<automaticRestart,Automatic Restart>> feature is included that allows the server to restart if a change occurs to a file. This feature can be used both in production and at development time to achieve automatic application restarts when changing source code (when combined with a third party tool such as Gradle or Kubernetes in production).
-
-=== API Versioning Support
-
-API versioning is now supported. See the <<apiVersioning, API Versioning>> documentation for more information on how to use this feature.
-
-=== Support for Spring Cloud Config Server
-
-If you are already using https://spring.io/projects/spring-cloud-config[Spring Config Server] then Micronaut now features native integration for distributed configuration.
-
-See the <<distributedConfigurationSpringCloud, Documentation on Distributed Configuration with Spring Cloud Config>> for more information.
-
-=== Refactoring of File Responses
-
-In an effort to make a more consistent and understandable API, some methods and classes related to sending file responses have been deprecated. api:http.server.types.files.SystemFile[] is the replacement for api:http.server.types.files.AttachedFile[] and the constructors of api:http.server.types.files.StreamedFile[] have been deprecated in favor of new constructors that better convey the intended functionality.
-
-=== Support for Freemarker Views
-
-Support for rendering <<freemarker,Freemaker Views>> has been added.
-
-=== Support for JCache Caching
-
-Support has been added for the JCache specification. If you define a `javax.cache.CacheManager` bean it will be used for caching. For example:
-
-.Using JCache Caching
-[source,java]
-----
-@Factory
-class CacheFactory {
-
-    @Singleton
-    @Bean
-    CacheManager cacheManager() {
-        CacheManager cacheManager = Caching.getCachingProvider()
-                                           .getCacheManager();
-        cacheManager.createCache('my-cache', new MutableConfiguration());
-        return cacheManager;
-    }
-}
-
-----
+Hibernate Validator is no longer a required dependency, with a new <<beanValidation,native implementation of Bean Validation>> available that is reflection free and supports reactive and AST level validations now available.
 
 === Dependency Upgrades
 
-* Kafka `2.0.0` -> `2.0.1`
+- Groovy `2.5.4` -> `2.5.6`
+- TODO
 
-=== Micrometer 1.1 and @Timed Support
+=== Conditional Beans with Factories
 
-Micrometer has been upgraded to 1.1 and support for https://micrometer.io/docs/concepts#_the_code_timed_code_annotation[@Timed] AOP advice added.
+The use of `@Requires` is the preferred method for dealing with conditional beans, however it does not fit all use cases. When using `@EachProperty` it is common to require additional beans based on the configuration. `@EachBean` allows a bean to be created for each configuration, however a common use case is creating a bean only if some configuration property condition is met. To allow for this use case, it is now possible to return `null` from `@Factory` methods.
 
-=== Dependency Upgrades
-
-- Micrometer `1.0.6` -> `1.1.1`

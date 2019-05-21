@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.views.handlebars;
 
 import com.github.jknack.handlebars.Handlebars;
@@ -26,12 +25,14 @@ import io.micronaut.core.util.StringUtils;
 import io.micronaut.core.util.ArgumentUtils;
 import io.micronaut.http.MediaType;
 import io.micronaut.http.annotation.Produces;
+import io.micronaut.views.ViewUtils;
 import io.micronaut.views.ViewsConfiguration;
 import io.micronaut.views.ViewsRenderer;
 import io.micronaut.views.exceptions.ViewRenderingException;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import javax.inject.Inject;
 import javax.inject.Singleton;
 
 /**
@@ -50,22 +51,38 @@ public class HandlebarsViewsRenderer implements ViewsRenderer {
     protected final ViewsConfiguration viewsConfiguration;
     protected final ResourceLoader resourceLoader;
     protected HandlebarsViewsRendererConfiguration handlebarsViewsRendererConfiguration;
-    protected Handlebars handlebars = new Handlebars();
+    protected Handlebars handlebars;
     protected String folder;
 
 
     /**
-     * @param viewsConfiguration                   Views Configuration.
+     * @param viewsConfiguration                   Views Configuration
      * @param resourceLoader                       Resource Loader
      * @param handlebarsViewsRendererConfiguration Handlebars ViewRenderer Configuration.
      */
+    @Deprecated
     public HandlebarsViewsRenderer(ViewsConfiguration viewsConfiguration,
                                    ClassPathResourceLoader resourceLoader,
                                    HandlebarsViewsRendererConfiguration handlebarsViewsRendererConfiguration) {
+        this(viewsConfiguration, resourceLoader, handlebarsViewsRendererConfiguration, new Handlebars());
+    }
+
+    /**
+     * @param viewsConfiguration                   Views Configuration
+     * @param resourceLoader                       Resource Loader
+     * @param handlebarsViewsRendererConfiguration Handlebars ViewRenderer Configuration.
+     * @param handlebars                           Handlebars Engine
+     */
+    @Inject
+    public HandlebarsViewsRenderer(ViewsConfiguration viewsConfiguration,
+                                   ClassPathResourceLoader resourceLoader,
+                                   HandlebarsViewsRendererConfiguration handlebarsViewsRendererConfiguration,
+                                   Handlebars handlebars) {
         this.viewsConfiguration = viewsConfiguration;
         this.resourceLoader = resourceLoader;
         this.handlebarsViewsRendererConfiguration = handlebarsViewsRendererConfiguration;
-        this.folder = normalizeFolder(viewsConfiguration.getFolder());
+        this.folder = viewsConfiguration.getFolder();
+        this.handlebars = handlebars;
     }
 
     @Override
@@ -93,8 +110,7 @@ public class HandlebarsViewsRenderer implements ViewsRenderer {
     }
 
     private String viewLocation(final String name) {
-        return folder +
-                normalizeFile(name, extension());
+        return folder + ViewUtils.normalizeFile(name, extension());
     }
 
     private String extension() {

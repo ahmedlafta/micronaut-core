@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.cli
 
 import groovy.transform.Canonical
@@ -171,6 +170,10 @@ class MicronautCli {
         }
 
         MicronautCli cli = new MicronautCli()
+        if (MavenProfileRepository.DEFAULT_REPO == MavenProfileRepository.SNAPSHOT_REPO) {
+            cli.profileRepositories.add(MavenProfileRepository.RELEASE_REPO)
+        }
+
         try {
             exit(cli.execute(args))
         } catch (ParameterException e) {
@@ -231,7 +234,10 @@ class MicronautCli {
             if (parseResult.hasSubcommand()) {
                 def pr = parseResult
                 while (pr.hasSubcommand()) { pr = pr.subcommand() } // most specific subcommand
-                return executeCommand(pr.commandSpec().userObject() as Command, pr) ? 0 : 1
+                Command command = pr.commandSpec().userObject() as Command
+                int result =  executeCommand(command, pr) ? 0 : 1
+                command.reset()
+                return result
             } else if (parseResult.unmatched()) {
                 return getBaseUsage()
             } else {
@@ -242,7 +248,10 @@ class MicronautCli {
                     def pr = context.parseResult
                     assertNoUnmatchedArguments(pr)
                     while (pr.hasSubcommand()) { pr = pr.subcommand() } // most specific subcommand
-                    return executeCommand(pr.commandSpec().userObject() as Command, pr)
+                    Command command = pr.commandSpec().userObject() as Command
+                    boolean result =  executeCommand(command, pr)
+                    command.reset()
+                    return result
                 }] as Profile
 
                 startInteractiveMode(console)
@@ -639,6 +648,11 @@ class MicronautCli {
             }
             return false
         }
+
+        @Override
+        void reset() {
+
+        }
     }
 
     @Canonical
@@ -651,6 +665,11 @@ class MicronautCli {
         boolean handle(ExecutionContext context) {
             micronautCli.keepRunning = false
             return true
+        }
+
+        @Override
+        void reset() {
+
         }
     }
 

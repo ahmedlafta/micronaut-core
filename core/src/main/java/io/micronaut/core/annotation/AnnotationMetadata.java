@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.core.annotation;
 
+import io.micronaut.core.naming.NameUtils;
 import io.micronaut.core.reflect.ClassUtils;
 import io.micronaut.core.type.Argument;
 import io.micronaut.core.util.ArgumentUtils;
@@ -170,6 +170,36 @@ public interface AnnotationMetadata extends AnnotationSource {
     }
 
     /**
+     * Checks whether the given annotation simple name (name without the package) is present in the annotations.
+     *
+     * @param annotation The annotation
+     * @return True if the annotation is present
+     */
+    default boolean hasSimpleAnnotation(@Nullable String annotation) {
+        if (annotation == null) {
+            return false;
+        }
+        return getAnnotationNames().stream().anyMatch(a ->
+                NameUtils.getSimpleName(a).equalsIgnoreCase(annotation)
+        );
+    }
+
+    /**
+     * Checks whether the given annotation simple name (name without the package) is present in the declared annotations.
+     *
+     * @param annotation The annotation
+     * @return True if the annotation is present
+     */
+    default boolean hasSimpleDeclaredAnnotation(@Nullable String annotation) {
+        if (annotation == null) {
+            return false;
+        }
+        return getDeclaredAnnotationNames().stream().anyMatch(a ->
+                NameUtils.getSimpleName(a).equalsIgnoreCase(annotation)
+        );
+    }
+
+    /**
      * <p>Checks whether this object has the given annotation stereotype on the object itself or inherited from a parent</p>.
      * <p>
      * <p>An annotation stereotype is a meta annotation potentially applied to another annotation</p>
@@ -193,6 +223,14 @@ public interface AnnotationMetadata extends AnnotationSource {
         return false;
     }
 
+    /**
+     * Return the default values for the given annotation name.
+     * @param annotation The annotation name
+     * @return The default values
+     */
+    default @Nonnull Map<String, Object> getDefaultValues(@Nonnull String annotation) {
+        return Collections.emptyMap();
+    }
 
     /**
      * Return the default value for the given annotation member.

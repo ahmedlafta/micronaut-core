@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.configuration.hibernate.validator;
 
-import io.micronaut.context.annotation.Bean;
 import io.micronaut.context.annotation.Factory;
+import io.micronaut.context.annotation.Requires;
 import io.micronaut.context.annotation.Value;
 import io.micronaut.context.env.Environment;
+import io.micronaut.core.annotation.TypeHint;
+import org.hibernate.validator.HibernateValidator;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -41,6 +42,8 @@ import java.util.Properties;
  * @since 1.0
  */
 @Factory
+@Requires(classes = HibernateValidator.class)
+@TypeHint(value = {HibernateValidator.class, com.sun.el.ExpressionFactoryImpl.class})
 public class ValidatorFactoryProvider {
 
     @Inject
@@ -64,7 +67,7 @@ public class ValidatorFactoryProvider {
      * @return validator factory
      */
     @Singleton
-    @Bean
+    @Requires(classes = HibernateValidator.class)
     ValidatorFactory validatorFactory(Optional<Environment> environment) {
         Configuration validatorConfiguration = Validation.byDefaultProvider()
             .configure();

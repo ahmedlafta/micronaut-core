@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 package io.micronaut.upload
+
 
 import io.micronaut.AbstractMicronautSpec
 import io.micronaut.http.HttpRequest
@@ -53,6 +54,22 @@ class StreamUploadSpec extends AbstractMicronautSpec {
         result == "Uploaded ${data.size()}"
         file.exists()
         file.length() == data.size()
+    }
+
+    void "test releasing part datas late"() {
+        given:
+        MultipartBody requestBody = MultipartBody.builder()
+                .addPart("data", "data.pdf", new MediaType("application/pdf"), new byte[3000])
+                .build()
+
+        when:
+        HttpResponse response = client.toBlocking().exchange(
+                HttpRequest.POST("/upload/receive-flow-parts", requestBody)
+                        .contentType(MediaType.MULTIPART_FORM_DATA)
+                        .accept(MediaType.TEXT_PLAIN_TYPE), Boolean)
+
+        then:
+        response.code() == HttpStatus.OK.code
     }
 
     void "test upload big FileUpload object via transferTo"() {

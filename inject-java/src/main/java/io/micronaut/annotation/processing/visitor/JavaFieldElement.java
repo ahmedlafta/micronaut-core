@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 original authors
+ * Copyright 2017-2019 original authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,14 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.micronaut.annotation.processing.visitor;
 
 import io.micronaut.core.annotation.AnnotationMetadata;
+import io.micronaut.core.annotation.Internal;
 import io.micronaut.inject.ast.ClassElement;
 import io.micronaut.inject.ast.FieldElement;
 
-import javax.annotation.Nullable;
+import javax.annotation.Nonnull;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
@@ -32,6 +32,7 @@ import javax.lang.model.type.TypeMirror;
  * @author James Kleeh
  * @since 1.0
  */
+@Internal
 class JavaFieldElement extends AbstractJavaElement implements FieldElement {
 
     private final JavaVisitorContext visitorContext;
@@ -44,7 +45,7 @@ class JavaFieldElement extends AbstractJavaElement implements FieldElement {
      * @param visitorContext     The visitor context
      */
     JavaFieldElement(VariableElement variableElement, AnnotationMetadata annotationMetadata, JavaVisitorContext visitorContext) {
-        super(variableElement, annotationMetadata);
+        super(variableElement, annotationMetadata, visitorContext);
         this.variableElement = variableElement;
         this.visitorContext = visitorContext;
     }
@@ -63,7 +64,7 @@ class JavaFieldElement extends AbstractJavaElement implements FieldElement {
         this.declaringElement = declaringElement;
     }
 
-    @Nullable
+    @Nonnull
     @Override
     public ClassElement getType() {
         TypeMirror returnType = variableElement.asType();
